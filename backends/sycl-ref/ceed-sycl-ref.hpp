@@ -42,20 +42,12 @@ typedef struct {
 } CeedElemRestriction_Sycl;
 
 typedef struct {
-  // CUmodule module;
-  // CUfunction Interp;
-  // CUfunction Grad;
-  // CUfunction Weight;
   CeedScalar *d_interp_1d;
   CeedScalar *d_grad_1d;
   CeedScalar *d_q_weight_1d;
 } CeedBasis_Sycl;
 
 typedef struct {
-  // CUmodule module;
-  // CUfunction Interp;
-  // CUfunction Grad;
-  // CUfunction Weight;
   CeedScalar *d_interp;
   CeedScalar *d_grad;
   CeedScalar *d_q_weight;
