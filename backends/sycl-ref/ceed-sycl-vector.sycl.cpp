@@ -465,41 +465,45 @@ static int CeedVectorGetArrayWrite_Sycl(const CeedVector vec, const CeedMemType 
 //------------------------------------------------------------------------------
 // Get the norm of a CeedVector
 //------------------------------------------------------------------------------
-static int CeedVectorNorm_Sycl(sycl::queue &sycl_queue, CeedVector vec, CeedNormType type, CeedScalar *norm) {
+static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *norm) {
   Ceed ceed;
   CeedCallBackend(CeedVectorGetCeed(vec, &ceed));
   CeedVector_Sycl *impl;
   CeedCallBackend(CeedVectorGetData(vec, &impl));
   CeedSize length;
   CeedCallBackend(CeedVectorGetLength(vec, &length));
+  Ceed_Sycl *data;
+  CeedCallBackend(CeedGetData(ceed, &data));
 
   // Compute norm
   const CeedScalar *d_array;
-  CeedScalar       *reduced_value = sycl::malloc_device<CeedScalar>(1, sycl_queue);
+  CeedScalar       *reduced_value = sycl::malloc_device<CeedScalar>(1, data->sycl_device, data->sycl_context);
   CeedCallBackend(CeedVectorGetArrayRead(vec, CEED_MEM_DEVICE, &d_array));
   switch (type) {
     case CEED_NORM_1: {
       auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
-      sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += d_array[i]; });
-      // *norm = 45.0;
+      data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += abs(d_array[i]); });
       break;
     }
     case CEED_NORM_2: {
       auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
-      sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); });
+      data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); });
       break;
-      // *norm = 285.0;
     }
     case CEED_NORM_MAX: {
       auto maxReduction = sycl::reduction(reduced_value, sycl::maximum<>());
-      sycl_queue.parallel_for(length, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(d_array[i]); });
+      data->sycl_queue.parallel_for(length, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(abs(d_array[i])); });
       break;
-      // *norm = 9.0;
     }
   }
-  sycl::event copy_event = sycl_queue.copy<CeedScalar>(reduced_value,norm,1);
+  // Copy from device to host
+  sycl::event copy_event = data->sycl_queue.copy<CeedScalar>(reduced_value, norm, 1);
+  // Wait for copy to finish and handle exceptions
   CeedCallSycl(ceed, copy_event.wait_and_throw());
-  if (CEED_NORM_2) *norm = sqrt(*norm);
+  // L2 norm - square root over reduced value
+  if (type == CEED_NORM_2) *norm = sqrt(*norm);
+
+  CeedCallBackend(CeedVectorRestoreArrayRead(vec, &d_array));
 
   return CEED_ERROR_SUCCESS;
 }
