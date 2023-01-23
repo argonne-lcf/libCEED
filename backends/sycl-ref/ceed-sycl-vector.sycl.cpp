@@ -465,11 +465,43 @@ static int CeedVectorGetArrayWrite_Sycl(const CeedVector vec, const CeedMemType 
 //------------------------------------------------------------------------------
 // Get the norm of a CeedVector
 //------------------------------------------------------------------------------
-static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *norm) {
-  // TODO
+static int CeedVectorNorm_Sycl(sycl::queue &sycl_queue, CeedVector vec, CeedNormType type, CeedScalar *norm) {
   Ceed ceed;
   CeedCallBackend(CeedVectorGetCeed(vec, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedVector_Sycl *impl;
+  CeedCallBackend(CeedVectorGetData(vec, &impl));
+  CeedSize length;
+  CeedCallBackend(CeedVectorGetLength(vec, &length));
+
+  // Compute norm
+  const CeedScalar *d_array;
+  CeedScalar       *reduced_value = sycl::malloc_device<CeedScalar>(1, sycl_queue);
+  CeedCallBackend(CeedVectorGetArrayRead(vec, CEED_MEM_DEVICE, &d_array));
+  switch (type) {
+    case CEED_NORM_1: {
+      auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
+      sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += d_array[i]; });
+      // *norm = 45.0;
+      break;
+    }
+    case CEED_NORM_2: {
+      auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
+      sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); });
+      break;
+      // *norm = 285.0;
+    }
+    case CEED_NORM_MAX: {
+      auto maxReduction = sycl::reduction(reduced_value, sycl::maximum<>());
+      sycl_queue.parallel_for(length, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(d_array[i]); });
+      break;
+      // *norm = 9.0;
+    }
+  }
+  sycl::event copy_event = sycl_queue.copy<CeedScalar>(reduced_value,norm,1);
+  CeedCallSycl(ceed, copy_event.wait_and_throw());
+  if (CEED_NORM_2) *norm = sqrt(*norm);
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
