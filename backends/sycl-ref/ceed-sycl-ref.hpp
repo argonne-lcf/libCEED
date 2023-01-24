@@ -51,9 +51,9 @@ typedef struct {
 
 typedef struct {
   CeedInt dim;
-  CeedInt P_1d;
-  CeedInt Q_1d;
   CeedInt num_comp;
+  CeedInt num_nodes;
+  CeedInt num_qpts;
   CeedScalar *d_interp;
   CeedScalar *d_grad;
   CeedScalar *d_q_weight;
