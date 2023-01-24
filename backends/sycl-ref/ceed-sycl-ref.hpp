@@ -37,23 +37,23 @@ typedef struct {
 } CeedElemRestriction_Sycl;
 
 typedef struct {
-  CeedInt dim;
-  CeedInt P_1d;
-  CeedInt Q_1d;
-  CeedInt num_comp;
-  CeedInt num_nodes;
-  CeedInt num_qpts;
-  CeedInt buf_len;
+  CeedInt     dim;
+  CeedInt     P_1d;
+  CeedInt     Q_1d;
+  CeedInt     num_comp;
+  CeedInt     num_nodes;
+  CeedInt     num_qpts;
+  CeedInt     buf_len;
   CeedScalar *d_interp_1d;
   CeedScalar *d_grad_1d;
   CeedScalar *d_q_weight_1d;
 } CeedBasis_Sycl;
 
 typedef struct {
-  CeedInt dim;
-  CeedInt num_comp;
-  CeedInt num_nodes;
-  CeedInt num_qpts;
+  CeedInt     dim;
+  CeedInt     num_comp;
+  CeedInt     num_nodes;
+  CeedInt     num_qpts;
   CeedScalar *d_interp;
   CeedScalar *d_grad;
   CeedScalar *d_q_weight;
