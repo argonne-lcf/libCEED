@@ -43,7 +43,18 @@ int CeedElemRestrictionApplyBlock_Sycl(CeedElemRestriction r, CeedInt block, Cee
 static int CeedElemRestrictionGetOffsets_Sycl(CeedElemRestriction r, CeedMemType m_type, const CeedInt **offsets) {
   Ceed ceed;
   CeedCallBackend(CeedElemRestrictionGetCeed(r, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedElemRestriction_Sycl *impl;
+  CeedCallBackend(CeedElemRestrictionGetData(r, &impl));
+
+  switch (m_type) {
+    case CEED_MEM_HOST:
+      *offsets = impl->h_ind;
+      break;
+    case CEED_MEM_DEVICE:
+      *offsets = impl->d_ind;
+      break;
+  }
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
@@ -75,7 +86,83 @@ static int CeedElemRestrictionDestroy_Sycl(CeedElemRestriction r) {
 static int CeedElemRestrictionOffset_Sycl(const CeedElemRestriction r, const CeedInt *indices) {
   Ceed ceed;
   CeedCallBackend(CeedElemRestrictionGetCeed(r, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedElemRestriction_Sycl *impl;
+  CeedCallBackend(CeedElemRestrictionGetData(r, &impl));
+  CeedSize l_size;
+  CeedInt num_elem, elem_size, num_comp;
+  CeedCallBackend(CeedElemRestrictionGetNumElements(r, &num_elem));
+  CeedCallBackend(CeedElemRestrictionGetElementSize(r, &elem_size));
+  CeedCallBackend(CeedElemRestrictionGetLVectorSize(r, &l_size));
+  CeedCallBackend(CeedElemRestrictionGetNumComponents(r, &num_comp));
+
+  // Count num_nodes
+  bool *is_node;
+  CeedCallBackend(CeedCalloc(l_size, &is_node));
+  const CeedInt size_indices = num_elem * elem_size;
+  for(CeedInt i = 0; i< size_indices ; ++i) is_node[indices[i]] = 1;
+  CeedInt num_nodes = 0;
+  for(CeedInt i = 0; i< l_size; ++i) num_nodes += is_node[i];
+  impl->num_nodes = num_nodes;
+
+  // L-vector offsets array
+  CeedInt *ind_to_offset, *l_vec_indices;
+  CeedCallBackend(CeedCalloc(l_size, &ind_to_offset));
+  CeedCallBackend(CeedCalloc(num_nodes, &l_vec_indices));
+  CeedInt j = 0;
+  for (CeedInt i = 0; i<l_size;i++) {
+    if (is_node[i]) {
+      l_vec_indices[j] = i;
+      ind_to_offset[i] = j++;
+    }
+  }
+  CeedCallBackend(CeedFree(&is_node));
+
+  // Compute transpose offsets and indices
+  const CeedInt size_offsets = num_nodes + 1;
+  CeedInt *t_offsets;
+  CeedCallBackend(CeedCalloc(size_offsets, &t_offsets));
+  CeedInt *t_indices;
+  CeedCallBackend(CeedMalloc(size_indices, &t_indices));
+  // Count node multiplicity
+  for (CeedInt e = 0; e < num_elem; ++e) {
+    for(CeedInt i = 0; i < elem_size; ++i) ++t_offsets[ind_to_offset[indices[elem_size * e + i]] + 1];
+  }
+  // Convert to running sum
+  for (CeedInt i = 1; i < size_offsets; ++i) t_offsets[i] += t_offsets[i - 1];
+  // List all E-vec indices associated with L-vec node
+  for (CeedInt e = 0; e < num_elem; ++e) {
+    for (CeedInt i = 0; i < elem_size; ++i) {
+      const CeedInt lid = elem_size*e + i;
+      const CeedInt gid = indices[lid];
+      t_indices[t_offsets[ind_to_offset[gid]]++] = lid;
+    }
+  }
+  // Reset running sum
+  for (int i = size_offsets - 1; i > 0; --i) t_offsets[i] = t_offsets[i - 1];
+  t_offsets[0] = 0;
+
+  // Copy data to device
+  Ceed_Sycl *data;
+  CeedCallBackend(CeedGetData(ceed, &data));
+  // -- L-vector indices
+  CeedCallSycl(ceed, impl->d_l_vec_indices = sycl::malloc_device<CeedInt>(num_nodes, data->sycl_device, data->sycl_context));
+  CeedCallSycl(ceed, data->sycl_queue.copy<CeedInt>(l_vec_indices, impl->d_l_vec_indices, num_nodes));
+  // -- Transpose offsets
+  CeedCallSycl(ceed, impl->d_t_offsets = sycl::malloc_device<CeedInt>(size_offsets, data->sycl_device, data->sycl_context));
+  CeedCallSycl(ceed, data->sycl_queue.copy<CeedInt>(t_offsets, impl->d_t_offsets, size_offsets));
+  // -- Transpose indices
+  CeedCallSycl(ceed, impl->d_t_indices = sycl::malloc_device<CeedInt>(size_indices, data->sycl_device, data->sycl_context));
+  CeedCallSycl(ceed, data->sycl_queue.copy<CeedInt>(t_indices, impl->d_t_indices,size_indices));
+  // Wait for all copies to complete and handle exceptions
+  CeedCallSycl(ceed, data->sycl_queue.wait_and_throw());
+
+  // Cleanup
+  CeedCallBackend(CeedFree(&ind_to_offset));
+  CeedCallBackend(CeedFree(&l_vec_indices));
+  CeedCallBackend(CeedFree(&t_offsets));
+  CeedCallBackend(CeedFree(&t_indices));
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
