@@ -50,9 +50,23 @@ static int CeedElemRestrictionGetOffsets_Sycl(CeedElemRestriction r, CeedMemType
 // Destroy restriction
 //------------------------------------------------------------------------------
 static int CeedElemRestrictionDestroy_Sycl(CeedElemRestriction r) {
+  CeedElemRestriction_Sycl *impl;
+  CeedCallBackend(CeedElemRestrictionGetData(r, &impl));
+
   Ceed ceed;
   CeedCallBackend(CeedElemRestrictionGetCeed(r, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  Ceed_Sycl *data;
+  CeedCallBackend(CeedGetData(ceed, &data));
+
+  // Wait for all work to finish before freeing memory
+  CeedCallSycl(ceed, data->sycl_queue.wait_and_throw());
+  CeedCallSycl(ceed, sycl::free(impl->d_ind_allocated , data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_t_offsets     , data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_t_indices     , data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_l_vec_indices , data->sycl_context));
+  CeedCallBackend(CeedFree(&impl));
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
