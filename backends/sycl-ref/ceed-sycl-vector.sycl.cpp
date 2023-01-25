@@ -477,27 +477,30 @@ static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *no
 
   // Compute norm
   const CeedScalar *d_array;
-  CeedScalar       *reduced_value = sycl::malloc_device<CeedScalar>(1, data->sycl_device, data->sycl_context);
   CeedCallBackend(CeedVectorGetArrayRead(vec, CEED_MEM_DEVICE, &d_array));
+
+  if (!impl->reduction_norm) {
+    CeedCallSycl(ceed, impl->reduction_norm = sycl::malloc_device<CeedScalar>(1, data->sycl_device, data->sycl_context));
+  }
   switch (type) {
     case CEED_NORM_1: {
-      auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
+      auto sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>());
       data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += abs(d_array[i]); });
       break;
     }
     case CEED_NORM_2: {
-      auto sumReduction = sycl::reduction(reduced_value, sycl::plus<>());
+      auto sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>());
       data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); });
       break;
     }
     case CEED_NORM_MAX: {
-      auto maxReduction = sycl::reduction(reduced_value, sycl::maximum<>());
+      auto maxReduction = sycl::reduction(impl->reduction_norm, sycl::maximum<>());
       data->sycl_queue.parallel_for(length, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(abs(d_array[i])); });
       break;
     }
   }
   // Copy from device to host
-  sycl::event copy_event = data->sycl_queue.copy<CeedScalar>(reduced_value, norm, 1);
+  sycl::event copy_event = data->sycl_queue.copy<CeedScalar>(impl->reduction_norm, norm, 1);
   // Wait for copy to finish and handle exceptions
   CeedCallSycl(ceed, copy_event.wait_and_throw());
   // L2 norm - square root over reduced value
@@ -691,6 +694,7 @@ static int CeedVectorDestroy_Sycl(const CeedVector vec) {
   // Wait for all work to finish before freeing memory
   CeedCallSycl(ceed, data->sycl_queue.wait_and_throw());
   CeedCallSycl(ceed, sycl::free(impl->d_array_owned, data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->reduction_norm, data->sycl_context));
 
   CeedCallBackend(CeedFree(&impl->h_array_owned));
   CeedCallBackend(CeedFree(&impl));
