@@ -26,12 +26,12 @@ typedef struct {
 } CeedVector_Sycl;
 
 typedef struct {
-  // CUmodule module;
-  // CUfunction StridedTranspose;
-  // CUfunction StridedNoTranspose;
-  // CUfunction OffsetTranspose;
-  // CUfunction OffsetNoTranspose;
   CeedInt  num_nodes;
+  CeedInt  num_elem;
+  CeedInt  num_comp;
+  CeedInt  elem_size;
+  CeedInt comp_stride;
+  CeedInt strides[3];
   CeedInt *h_ind;
   CeedInt *h_ind_allocated;
   CeedInt *d_ind;
