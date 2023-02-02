@@ -27,7 +27,6 @@ typedef struct {
   CeedInt* outputs[CEED_SYCL_NUMBER_FIELDS];
 } FieldsInt_Sycl;
 
-
 // TODO: Determine if slice should have `__local` qualifier
 typedef struct {
   CeedInt     t_id_x;
