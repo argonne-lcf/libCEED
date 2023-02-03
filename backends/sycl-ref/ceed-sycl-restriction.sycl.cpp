@@ -111,22 +111,19 @@ static int CeedElemRestrictionOffsetTranspose_Sycl (sycl::queue &sycl_queue, con
     const CeedInt range_1 = t_offsets[i];
     const CeedInt range_N = t_offsets[i+1];
 
-    CeedScalar value[10];
+    CeedScalar value;
 
-    for (CeedInt comp = 0; comp < num_comp; comp++) value[comp] = 0.0;
+    for (CeedInt comp = 0; comp < num_comp; comp++) {
+      value = 0.0;
 
-    for (CeedInt j = range_1; j < range_N; j++) {
-      const CeedInt t_ind = t_indices[j];
-      CeedInt loc_node = t_ind % elem_size;
-      CeedInt elem = t_ind / elem_size;
+      for (CeedInt j = range_1; j < range_N; j++) {
+        const CeedInt t_ind = t_indices[j];
+        CeedInt loc_node = t_ind % elem_size;
+        CeedInt elem = t_ind / elem_size;
 
-      for (CeedInt comp = 0;comp<num_comp;comp++) {
-        value[comp] += u[loc_node+comp*elem_size*num_elem + elem*elem_size];
+        value += u[loc_node+comp*elem_size*num_elem + elem*elem_size];
       }
-    }
-
-    for (CeedInt comp = 0;comp<num_comp;comp++) {
-      v[ind+comp*comp_stride] += value[comp];
+      v[ind+comp*comp_stride] += value;
     }
   });
   return CEED_ERROR_SUCCESS;
