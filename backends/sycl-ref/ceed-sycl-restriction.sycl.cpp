@@ -109,26 +109,24 @@ static int CeedElemRestrictionOffsetTranspose_Sycl(sycl::queue &sycl_queue, cons
   const CeedInt *t_offsets     = impl->d_t_offsets;
   const CeedInt *t_indices     = impl->d_t_indices;
 
-  sycl::range<1> kernel_range(num_nodes);
-  sycl_queue.parallel_for(kernel_range, [=](sycl::id<1> i) {
-    const CeedInt ind     = l_vec_indices[i];
-    const CeedInt range_1 = t_offsets[i];
-    const CeedInt range_N = t_offsets[i + 1];
+  sycl::range<1> kernel_range(num_nodes * num_comp);
+  sycl_queue.parallel_for<CeedElemRestrSyclOffsetT>(kernel_range, [=](sycl::id<1> id) {
+    const CeedInt node    = id % num_nodes;
+    const CeedInt comp    = id / num_nodes;
+    const CeedInt ind     = l_vec_indices[node];
+    const CeedInt range_1 = t_offsets[node];
+    const CeedInt range_N = t_offsets[node + 1];
 
-    CeedScalar value;
+    CeedScalar value = 0.0;
 
-    for (CeedInt comp = 0; comp < num_comp; comp++) {
-      value = 0.0;
+    for (CeedInt j = range_1; j < range_N; j++) {
+      const CeedInt t_ind    = t_indices[j];
+      CeedInt       loc_node = t_ind % elem_size;
+      CeedInt       elem     = t_ind / elem_size;
 
-      for (CeedInt j = range_1; j < range_N; j++) {
-        const CeedInt t_ind    = t_indices[j];
-        CeedInt       loc_node = t_ind % elem_size;
-        CeedInt       elem     = t_ind / elem_size;
-
-        value += u[loc_node + comp * elem_size * num_elem + elem * elem_size];
-      }
-      v[ind + comp * comp_stride] += value;
+      value += u[loc_node + comp * elem_size * num_elem + elem * elem_size];
     }
+    v[ind + comp * comp_stride] += value;
   });
   return CEED_ERROR_SUCCESS;
 }
