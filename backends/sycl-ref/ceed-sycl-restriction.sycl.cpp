@@ -24,21 +24,22 @@ class CeedElemRestrSyclOffsetT;
 //------------------------------------------------------------------------------
 // Restriction Kernel : L-vector -> E-vector, strided
 //------------------------------------------------------------------------------
-static int CeedElemRestrictionStridedNoTranspose_Sycl (sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u, CeedScalar *v) {
-  const CeedInt elem_size = impl->elem_size;
-  const CeedInt num_elem = impl->num_elem;
-  const CeedInt num_comp = impl->num_comp;
+static int CeedElemRestrictionStridedNoTranspose_Sycl(sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u,
+                                                      CeedScalar *v) {
+  const CeedInt elem_size    = impl->elem_size;
+  const CeedInt num_elem     = impl->num_elem;
+  const CeedInt num_comp     = impl->num_comp;
   const CeedInt stride_nodes = impl->strides[0];
-  const CeedInt stride_comp = impl->strides[1];
-  const CeedInt stride_elem = impl->strides[2];
-  
-  sycl::range<1> kernel_range(num_elem*elem_size);
-  sycl_queue.parallel_for<CeedElemRestrSyclStridedNT> (kernel_range, [=](sycl::id<1> node) {
+  const CeedInt stride_comp  = impl->strides[1];
+  const CeedInt stride_elem  = impl->strides[2];
+
+  sycl::range<1> kernel_range(num_elem * elem_size);
+  sycl_queue.parallel_for<CeedElemRestrSyclStridedNT>(kernel_range, [=](sycl::id<1> node) {
     const CeedInt loc_node = node % elem_size;
-    const CeedInt elem = node / elem_size;
+    const CeedInt elem     = node / elem_size;
 
     for (CeedInt comp = 0; comp < num_comp; comp++) {
-      v[loc_node + comp*elem_size*num_elem + elem*elem_size] = u[loc_node*stride_nodes + comp*stride_comp + elem*stride_elem];
+      v[loc_node + comp * elem_size * num_elem + elem * elem_size] = u[loc_node * stride_nodes + comp * stride_comp + elem * stride_elem];
     }
   });
   return CEED_ERROR_SUCCESS;
@@ -47,22 +48,23 @@ static int CeedElemRestrictionStridedNoTranspose_Sycl (sycl::queue &sycl_queue, 
 //------------------------------------------------------------------------------
 // Restriction Kernel : L-vector -> E-vector, offsets provided
 //------------------------------------------------------------------------------
-static int CeedElemRestrictionOffsetNoTranspose_Sycl (sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u, CeedScalar *v) {
-  const CeedInt elem_size = impl->elem_size;
-  const CeedInt num_elem = impl->num_elem;
-  const CeedInt num_comp = impl->num_comp;
+static int CeedElemRestrictionOffsetNoTranspose_Sycl(sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u,
+                                                     CeedScalar *v) {
+  const CeedInt elem_size   = impl->elem_size;
+  const CeedInt num_elem    = impl->num_elem;
+  const CeedInt num_comp    = impl->num_comp;
   const CeedInt comp_stride = impl->comp_stride;
 
   const CeedInt *indices = impl->d_ind;
 
-  sycl::range<1> kernel_range(num_elem*elem_size);
-  sycl_queue.parallel_for<CeedElemRestrSyclOffsetNT> (kernel_range, [=](sycl::id<1> node) {
-    const CeedInt ind = indices[node];
+  sycl::range<1> kernel_range(num_elem * elem_size);
+  sycl_queue.parallel_for<CeedElemRestrSyclOffsetNT>(kernel_range, [=](sycl::id<1> node) {
+    const CeedInt ind      = indices[node];
     const CeedInt loc_node = node % elem_size;
-    const CeedInt elem = node / elem_size;
+    const CeedInt elem     = node / elem_size;
 
     for (CeedInt comp = 0; comp < num_comp; comp++) {
-      v[loc_node+comp*elem_size*num_elem + elem*elem_size] = u[ind+comp*comp_stride];
+      v[loc_node + comp * elem_size * num_elem + elem * elem_size] = u[ind + comp * comp_stride];
     }
   });
   return CEED_ERROR_SUCCESS;
@@ -71,21 +73,22 @@ static int CeedElemRestrictionOffsetNoTranspose_Sycl (sycl::queue &sycl_queue, c
 //------------------------------------------------------------------------------
 // Kernel: E-vector -> L-vector, strided
 //------------------------------------------------------------------------------
-static int CeedElemRestrictionStridedTranspose_Sycl (sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u, CeedScalar *v) {
-  const CeedInt elem_size = impl->elem_size;
-  const CeedInt num_elem = impl->num_elem;
-  const CeedInt num_comp = impl->num_comp;
+static int CeedElemRestrictionStridedTranspose_Sycl(sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u,
+                                                    CeedScalar *v) {
+  const CeedInt elem_size    = impl->elem_size;
+  const CeedInt num_elem     = impl->num_elem;
+  const CeedInt num_comp     = impl->num_comp;
   const CeedInt stride_nodes = impl->strides[0];
   const CeedInt stride_comp  = impl->strides[1];
   const CeedInt stride_elem  = impl->strides[2];
 
-  sycl::range<1> kernel_range(num_elem*elem_size);
-  sycl_queue.parallel_for<CeedElemRestrSyclStridedT> (kernel_range, [=](sycl::id<1> node) {
+  sycl::range<1> kernel_range(num_elem * elem_size);
+  sycl_queue.parallel_for<CeedElemRestrSyclStridedT>(kernel_range, [=](sycl::id<1> node) {
     const CeedInt loc_node = node % elem_size;
-    const CeedInt elem = node / elem_size;
+    const CeedInt elem     = node / elem_size;
 
-    for (CeedInt comp = 0; comp < num_comp ; comp++) {
-      v[loc_node*stride_nodes+comp*stride_comp+elem*stride_elem] += u[loc_node+comp*elem_size*num_elem + elem*elem_size];
+    for (CeedInt comp = 0; comp < num_comp; comp++) {
+      v[loc_node * stride_nodes + comp * stride_comp + elem * stride_elem] += u[loc_node + comp * elem_size * num_elem + elem * elem_size];
     }
   });
   return CEED_ERROR_SUCCESS;
@@ -94,22 +97,23 @@ static int CeedElemRestrictionStridedTranspose_Sycl (sycl::queue &sycl_queue, co
 //------------------------------------------------------------------------------
 // Kernel: E-vector -> L-vector, offsets provided
 //------------------------------------------------------------------------------
-static int CeedElemRestrictionOffsetTranspose_Sycl (sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u, CeedScalar *v) {
-  const CeedInt num_nodes = impl->num_nodes;
-  const CeedInt elem_size = impl->elem_size;
-  const CeedInt num_elem = impl->num_elem;
-  const CeedInt num_comp = impl->num_comp;
+static int CeedElemRestrictionOffsetTranspose_Sycl(sycl::queue &sycl_queue, const CeedElemRestriction_Sycl *impl, const CeedScalar *u,
+                                                   CeedScalar *v) {
+  const CeedInt num_nodes   = impl->num_nodes;
+  const CeedInt elem_size   = impl->elem_size;
+  const CeedInt num_elem    = impl->num_elem;
+  const CeedInt num_comp    = impl->num_comp;
   const CeedInt comp_stride = impl->comp_stride;
 
   const CeedInt *l_vec_indices = impl->d_l_vec_indices;
-  const CeedInt *t_offsets = impl->d_t_offsets;
-  const CeedInt *t_indices = impl->d_t_indices;
+  const CeedInt *t_offsets     = impl->d_t_offsets;
+  const CeedInt *t_indices     = impl->d_t_indices;
 
   sycl::range<1> kernel_range(num_nodes);
   sycl_queue.parallel_for(kernel_range, [=](sycl::id<1> i) {
-    const CeedInt ind = l_vec_indices[i];
+    const CeedInt ind     = l_vec_indices[i];
     const CeedInt range_1 = t_offsets[i];
-    const CeedInt range_N = t_offsets[i+1];
+    const CeedInt range_N = t_offsets[i + 1];
 
     CeedScalar value;
 
@@ -117,13 +121,13 @@ static int CeedElemRestrictionOffsetTranspose_Sycl (sycl::queue &sycl_queue, con
       value = 0.0;
 
       for (CeedInt j = range_1; j < range_N; j++) {
-        const CeedInt t_ind = t_indices[j];
-        CeedInt loc_node = t_ind % elem_size;
-        CeedInt elem = t_ind / elem_size;
+        const CeedInt t_ind    = t_indices[j];
+        CeedInt       loc_node = t_ind % elem_size;
+        CeedInt       elem     = t_ind / elem_size;
 
-        value += u[loc_node+comp*elem_size*num_elem + elem*elem_size];
+        value += u[loc_node + comp * elem_size * num_elem + elem * elem_size];
       }
-      v[ind+comp*comp_stride] += value;
+      v[ind + comp * comp_stride] += value;
     }
   });
   return CEED_ERROR_SUCCESS;
@@ -142,7 +146,7 @@ static int CeedElemRestrictionApply_Sycl(CeedElemRestriction r, CeedTransposeMod
 
   // Get vectors
   const CeedScalar *d_u;
-  CeedScalar *d_v;
+  CeedScalar       *d_v;
   CeedCallBackend(CeedVectorGetArrayRead(u, CEED_MEM_DEVICE, &d_u));
   if (t_mode == CEED_TRANSPOSE) {
     // Sum into for transpose mode, e-vec to l-vec
@@ -230,10 +234,10 @@ static int CeedElemRestrictionDestroy_Sycl(CeedElemRestriction r) {
   CeedCallSycl(ceed, data->sycl_queue.wait_and_throw());
 
   CeedCallBackend(CeedFree(&impl->h_ind_allocated));
-  CeedCallSycl(ceed, sycl::free(impl->d_ind_allocated , data->sycl_context));
-  CeedCallSycl(ceed, sycl::free(impl->d_t_offsets     , data->sycl_context));
-  CeedCallSycl(ceed, sycl::free(impl->d_t_indices     , data->sycl_context));
-  CeedCallSycl(ceed, sycl::free(impl->d_l_vec_indices , data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_ind_allocated, data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_t_offsets, data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_t_indices, data->sycl_context));
+  CeedCallSycl(ceed, sycl::free(impl->d_l_vec_indices, data->sycl_context));
   CeedCallBackend(CeedFree(&impl));
 
   return CEED_ERROR_SUCCESS;
@@ -248,7 +252,7 @@ static int CeedElemRestrictionOffset_Sycl(const CeedElemRestriction r, const Cee
   CeedElemRestriction_Sycl *impl;
   CeedCallBackend(CeedElemRestrictionGetData(r, &impl));
   CeedSize l_size;
-  CeedInt num_elem, elem_size, num_comp;
+  CeedInt  num_elem, elem_size, num_comp;
   CeedCallBackend(CeedElemRestrictionGetNumElements(r, &num_elem));
   CeedCallBackend(CeedElemRestrictionGetElementSize(r, &elem_size));
   CeedCallBackend(CeedElemRestrictionGetLVectorSize(r, &l_size));
@@ -258,9 +262,9 @@ static int CeedElemRestrictionOffset_Sycl(const CeedElemRestriction r, const Cee
   bool *is_node;
   CeedCallBackend(CeedCalloc(l_size, &is_node));
   const CeedInt size_indices = num_elem * elem_size;
-  for(CeedInt i = 0; i< size_indices ; i++) is_node[indices[i]] = 1;
+  for (CeedInt i = 0; i < size_indices; i++) is_node[indices[i]] = 1;
   CeedInt num_nodes = 0;
-  for(CeedInt i = 0; i< l_size; i++) num_nodes += is_node[i];
+  for (CeedInt i = 0; i < l_size; i++) num_nodes += is_node[i];
   impl->num_nodes = num_nodes;
 
   // L-vector offsets array
@@ -268,7 +272,7 @@ static int CeedElemRestrictionOffset_Sycl(const CeedElemRestriction r, const Cee
   CeedCallBackend(CeedCalloc(l_size, &ind_to_offset));
   CeedCallBackend(CeedCalloc(num_nodes, &l_vec_indices));
   CeedInt j = 0;
-  for (CeedInt i = 0; i<l_size;i++) {
+  for (CeedInt i = 0; i < l_size; i++) {
     if (is_node[i]) {
       l_vec_indices[j] = i;
       ind_to_offset[i] = j++;
@@ -278,21 +282,21 @@ static int CeedElemRestrictionOffset_Sycl(const CeedElemRestriction r, const Cee
 
   // Compute transpose offsets and indices
   const CeedInt size_offsets = num_nodes + 1;
-  CeedInt *t_offsets;
+  CeedInt      *t_offsets;
   CeedCallBackend(CeedCalloc(size_offsets, &t_offsets));
   CeedInt *t_indices;
   CeedCallBackend(CeedMalloc(size_indices, &t_indices));
   // Count node multiplicity
   for (CeedInt e = 0; e < num_elem; ++e) {
-    for(CeedInt i = 0; i < elem_size; ++i) ++t_offsets[ind_to_offset[indices[elem_size * e + i]] + 1];
+    for (CeedInt i = 0; i < elem_size; ++i) ++t_offsets[ind_to_offset[indices[elem_size * e + i]] + 1];
   }
   // Convert to running sum
   for (CeedInt i = 1; i < size_offsets; ++i) t_offsets[i] += t_offsets[i - 1];
   // List all E-vec indices associated with L-vec node
   for (CeedInt e = 0; e < num_elem; ++e) {
     for (CeedInt i = 0; i < elem_size; ++i) {
-      const CeedInt lid = elem_size*e + i;
-      const CeedInt gid = indices[lid];
+      const CeedInt lid                          = elem_size * e + i;
+      const CeedInt gid                          = indices[lid];
       t_indices[t_offsets[ind_to_offset[gid]]++] = lid;
     }
   }
@@ -338,8 +342,8 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType m_type, CeedCopyMode copy_mode, c
   CeedCallBackend(CeedElemRestrictionGetNumElements(r, &num_elem));
   CeedCallBackend(CeedElemRestrictionGetNumComponents(r, &num_comp));
   CeedCallBackend(CeedElemRestrictionGetElementSize(r, &elem_size));
-  CeedInt size = num_elem * elem_size;
-  CeedInt strides[3] = {1, size, elem_size};
+  CeedInt size        = num_elem * elem_size;
+  CeedInt strides[3]  = {1, size, elem_size};
   CeedInt comp_stride = 1;
 
   // Stride data
@@ -355,20 +359,20 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType m_type, CeedCopyMode copy_mode, c
     CeedCallBackend(CeedElemRestrictionGetCompStride(r, &comp_stride));
   }
 
-  impl->h_ind = NULL;
+  impl->h_ind           = NULL;
   impl->h_ind_allocated = NULL;
   impl->d_ind           = NULL;
   impl->d_ind_allocated = NULL;
   impl->d_t_indices     = NULL;
   impl->d_t_offsets     = NULL;
   impl->num_nodes       = size;
-  impl->num_elem = num_elem;
-  impl->num_comp = num_comp;
-  impl->elem_size = elem_size;
-  impl->comp_stride = comp_stride;
-  impl->strides[0] = strides[0];
-  impl->strides[1] = strides[1];
-  impl->strides[2] = strides[2];
+  impl->num_elem        = num_elem;
+  impl->num_comp        = num_comp;
+  impl->elem_size       = elem_size;
+  impl->comp_stride     = comp_stride;
+  impl->strides[0]      = strides[0];
+  impl->strides[1]      = strides[1];
+  impl->strides[2]      = strides[2];
   CeedCallBackend(CeedElemRestrictionSetData(r, impl));
   CeedInt layout[3] = {1, elem_size * num_elem, elem_size};
   CeedCallBackend(CeedElemRestrictionSetELayout(r, layout));
@@ -378,24 +382,24 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType m_type, CeedCopyMode copy_mode, c
     switch (copy_mode) {
       case CEED_OWN_POINTER:
         impl->h_ind_allocated = (CeedInt *)indices;
-	impl->h_ind = (CeedInt *)indices;
-	break;
+        impl->h_ind           = (CeedInt *)indices;
+        break;
       case CEED_USE_POINTER:
-	impl->h_ind = (CeedInt *)indices;
-	break;
+        impl->h_ind = (CeedInt *)indices;
+        break;
       case CEED_COPY_VALUES:
-	if (indices != NULL) {
-	  CeedCallBackend(CeedMalloc(elem_size*num_elem, &impl->h_ind_allocated));
-	  memcpy(impl->h_ind_allocated, indices, elem_size * num_elem * sizeof(CeedInt));
-	  impl->h_ind = impl->h_ind_allocated;
-	}
-	break;
+        if (indices != NULL) {
+          CeedCallBackend(CeedMalloc(elem_size * num_elem, &impl->h_ind_allocated));
+          memcpy(impl->h_ind_allocated, indices, elem_size * num_elem * sizeof(CeedInt));
+          impl->h_ind = impl->h_ind_allocated;
+        }
+        break;
     }
     if (indices != NULL) {
       CeedCallSycl(ceed, impl->d_ind = sycl::malloc_device<CeedInt>(size, data->sycl_device, data->sycl_context));
-      impl->d_ind_allocated = impl->d_ind; // We own the device memory
+      impl->d_ind_allocated = impl->d_ind;  // We own the device memory
       // Copy from host to device
-      sycl::event copy_event = data->sycl_queue.copy<CeedInt>(indices,impl->d_ind,size);
+      sycl::event copy_event = data->sycl_queue.copy<CeedInt>(indices, impl->d_ind, size);
       // Wait for copy to finish and handle exceptions
       CeedCallSycl(ceed, copy_event.wait_and_throw());
       CeedCallBackend(CeedElemRestrictionOffset_Sycl(r, indices));
@@ -404,28 +408,28 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType m_type, CeedCopyMode copy_mode, c
     switch (copy_mode) {
       case CEED_COPY_VALUES:
         if (indices != NULL) {
-	  CeedCallSycl(ceed, impl->d_ind = sycl::malloc_device<CeedInt>(size, data->sycl_device, data->sycl_context));
-	  impl->d_ind_allocated = impl->d_ind;  // We own the device memory
-          // Copy from device to device
-	  sycl::event copy_event = data->sycl_queue.copy<CeedInt>(indices,impl->d_ind,size);
-	  // Wait for copy to finish and handle exceptions
-	  CeedCallSycl(ceed, copy_event.wait_and_throw());
-	}
-	break;
+          CeedCallSycl(ceed, impl->d_ind = sycl::malloc_device<CeedInt>(size, data->sycl_device, data->sycl_context));
+          impl->d_ind_allocated = impl->d_ind;  // We own the device memory
+                                                // Copy from device to device
+          sycl::event copy_event = data->sycl_queue.copy<CeedInt>(indices, impl->d_ind, size);
+          // Wait for copy to finish and handle exceptions
+          CeedCallSycl(ceed, copy_event.wait_and_throw());
+        }
+        break;
       case CEED_OWN_POINTER:
-	impl->d_ind = (CeedInt *)indices;
-	impl->d_ind_allocated = impl->d_ind;
-	break;
+        impl->d_ind           = (CeedInt *)indices;
+        impl->d_ind_allocated = impl->d_ind;
+        break;
       case CEED_USE_POINTER:
-	impl->d_ind = (CeedInt *)indices;
+        impl->d_ind = (CeedInt *)indices;
     }
-    if (indices !=NULL) {
+    if (indices != NULL) {
       CeedCallBackend(CeedMalloc(elem_size * num_elem, &impl->h_ind_allocated));
       // Copy from device to host
-      sycl::event copy_event = data->sycl_queue.copy<CeedInt>(impl->d_ind,impl->h_ind_allocated,elem_size*num_elem);
+      sycl::event copy_event = data->sycl_queue.copy<CeedInt>(impl->d_ind, impl->h_ind_allocated, elem_size * num_elem);
       CeedCallSycl(ceed, copy_event.wait_and_throw());
       impl->h_ind = impl->h_ind_allocated;
-      CeedCallBackend(CeedElemRestrictionOffset_Sycl(r,indices));
+      CeedCallBackend(CeedElemRestrictionOffset_Sycl(r, indices));
     }
   } else {
     // LCOV_EXCL_START
