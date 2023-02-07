@@ -204,6 +204,8 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
   Ceed_Sycl *sycl_data;
   CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
+  // Wait for all work to finish before freeing memory
+  CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
   CeedCallSycl(ceed, sycl::free(impl->d_data_owned, sycl_data->sycl_context));
   impl->d_data_owned = NULL;
   switch (copy_mode) {
@@ -352,6 +354,8 @@ static int CeedQFunctionContextDestroy_Sycl(const CeedQFunctionContext ctx) {
   Ceed_Sycl *sycl_data;
   CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
+  // Wait for all work to finish before freeing memory
+  CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
   CeedCallSycl(ceed, sycl::free(impl->d_data_owned, sycl_data->sycl_context));
   CeedCallBackend(CeedFree(&impl->h_data_owned));
   CeedCallBackend(CeedFree(&impl));
