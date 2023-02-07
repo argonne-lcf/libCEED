@@ -270,11 +270,14 @@ static int CeedQFunctionContextTakeData_Sycl(const CeedQFunctionContext ctx, con
       *(void **)data        = impl->h_data_borrowed;
       impl->h_data_borrowed = NULL;
       impl->h_data          = NULL;
+      break;
     case CEED_MEM_DEVICE:
       *(void **)data        = impl->d_data_borrowed;
       impl->d_data_borrowed = NULL;
       impl->d_data          = NULL;
+      break;
   }
+
   return CEED_ERROR_SUCCESS;
 }
 
