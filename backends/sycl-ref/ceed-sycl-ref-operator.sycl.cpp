@@ -333,9 +333,98 @@ static inline int CeedOperatorRestoreInputs_Sycl(CeedInt numinputfields, CeedQFu
 // Apply and add to output
 //------------------------------------------------------------------------------
 static int CeedOperatorApplyAdd_Sycl(CeedOperator op, CeedVector invec, CeedVector outvec, CeedRequest *request) {
-  Ceed ceed;
-  CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedOperator_Sycl *impl;
+  CeedCallBackend(CeedOperatorGetData(op, &impl));
+  CeedQFunction qf;
+  CeedCallBackend(CeedOperatorGetQFunction(op, &qf));
+  CeedInt Q, numelements, elemsize, numinputfields, numoutputfields, size;
+  CeedCallBackend(CeedOperatorGetNumQuadraturePoints(op, &Q));
+  CeedCallBackend(CeedOperatorGetNumElements(op, &numelements));
+  CeedOperatorField *opinputfields, *opoutputfields;
+  CeedCallBackend(CeedOperatorGetFields(op, &numinputfields, &opinputfields, &numoutputfields, &opoutputfields));
+  CeedQFunctionField *qfinputfields, *qfoutputfields;
+  CeedCallBackend(CeedQFunctionGetFields(qf, NULL, &qfinputfields, NULL, &qfoutputfields));
+  CeedEvalMode emode;
+  CeedVector vec;
+  CeedBasis basis;
+  CeedElemRestriction Erestrict;
+  CeedScalar *edata[2*CEED_FIELD_MAX] = {0};
+
+  // Setup
+  CeedCallBackend(CeedOperatorSetup_Sycl(op));
+
+  // Input Evecs and Restriction
+  CeedCallBackend(CeedOperatorSetupInputs_Sycl(numinputfields, qfinputfields, opinputfields, invec, false, edata, impl, request));
+
+  // Input basis apply if needed
+  CeedCallBackend(CeedOperatorInputBasis_Sycl(numelements, qfinputfields, opinputfields, numinputfields, false, edata, impl));
+
+  // Output pointers, as necessary
+  for (CeedInt i = 0; i < numoutputfields; i++) {
+    CeedCallBackend(CeedQFunctionFieldGetEvalMode(qfoutputfields[i], &emode));
+    if (emode == CEED_EVAL_NONE) {
+      // Set the output Q-Vector to use the E-Vector data directly
+      CeedCallBackend(CeedVectorGetArrayWrite(impl->evecs[i + impl->numein], CEED_MEM_DEVICE, &edata[i + numinputfields]));
+      CeedCallBackend(CeedVectorSetArray(impl->qvecsout[i], CEED_MEM_DEVICE, CEED_USE_POINTER, edata[i + numinputfields]));
+    }
+  }
+
+  // Q function
+  CeedCallBackend(CeedQFunctionApply(qf, numelements * Q, impl->qvecsin, impl->qvecsout));
+
+  // Output basis apply if needed
+  for (CeedInt i = 0; i < numoutputfields; i++) {
+    // Get elemsize, emode, size
+    CeedCallBackend(CeedOperatorFieldGetElemRestriction(opoutputfields[i], &Erestrict));
+    CeedCallBackend(CeedElemRestrictionGetElementSize(Erestrict, &elemsize));
+    CeedCallBackend(CeedQFunctionFieldGetEvalMode(qfoutputfields[i], &emode));
+    CeedCallBackend(CeedQFunctionFieldGetSize(qfoutputfields[i], &size));
+    // Basis action
+    switch (emode) {
+      case CEED_EVAL_NONE:
+	break;
+      case CEED_EVAL_INTERP:
+	CeedCallBackend(CeedOperatorFieldGetBasis(opoutputfields[i], &basis));
+	CeedCallBackend(CeedBasisApply(basis, numelements, CEED_TRANSPOSE, CEED_EVAL_INTERP, impl->qvecsout[i], impl->evecs[i + impl->numein]));
+	break;
+      case CEED_EVAL_GRAD:
+	CeedCallBackend(CeedOperatorFieldGetBasis(opoutputfields[i], &basis));
+	CeedCallBackend(CeedBasisApply(basis, numelements, CEED_TRANSPOSE, CEED_EVAL_GRAD, impl->qvecsout[i], impl->evecs[i + impl->numein]));
+	break;
+      // LCOV_EXCL_START
+      case CEED_EVAL_WEIGHT:
+	Ceed ceed;
+	CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
+	return CeedError(ceed, CEED_ERROR_BACKEND, "CEED_EVAL_WEIGHT cannot be an output evaluation mode");
+	break; // Should not occur
+      case CEED_EVAL_DIV:
+	break;  // TODO: Not implemented
+      case CEED_EVAL_CURL:
+	break;  // TODO: Not implemented
+		// LCOV_EXCL_STOP
+    }
+  }
+
+  // Output restriction
+  for (CeedInt i = 0; i<numoutputfields; i++) {
+    // Restore evec
+    CeedCallBackend(CeedQFunctionFieldGetEvalMode(qfoutputfields[i], &emode));
+    if (emode == CEED_EVAL_NONE) {
+      CeedCallBackend(CeedVectorRestoreArray(impl->evecs[i + impl->numein], &edata[i + numinputfields]));
+    }
+    // Get output vector
+    CeedCallBackend(CeedOperatorFieldGetVector(opoutputfields[i], &vec));
+    // Restrict
+    CeedCallBackend(CeedOperatorFieldGetElemRestriction(opoutputfields[i], &Erestrict));
+    // Active
+    if (vec == CEED_VECTOR_ACTIVE) vec = outvec;
+
+    CeedCallBackend(CeedElemRestrictionApply(Erestrict, CEED_TRANSPOSE, impl->evecs[i + impl->numein], vec, request));
+  }
+
+  // Restore input arrays
+  CeedCallBackend(CeedOperatorRestoreInputs_Sycl(numinputfields, qfinputfields, opinputfields, false, edata, impl));
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
