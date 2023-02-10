@@ -626,7 +626,165 @@ static int CreatePBRestriction(CeedElemRestriction rstr, CeedElemRestriction *pb
 static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const bool pointBlock) {
   Ceed ceed;
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedQFunction qf;
+  CeedCallBackend(CeedOperatorGetQFunction(op, &qf));
+  CeedInt numinputfields, numoutputfields;
+  CeedCallBackend(CeedQFunctionGetNumArgs(qf, &numinputfields, &numoutputfields));
+
+  // Determine active input basis
+  CeedOperatorField *opfields;
+  CeedQFunctionField *qffields;
+  CeedCallBackend(CeedOperatorGetFields(op, NULL, &opfields, NULL, NULL));
+  CeedCallBackend(CeedQFunctionGetFields(qf, NULL, &qffields, NULL, NULL));
+  CeedInt numemodein = 0, ncomp = 0, dim = 1;
+  CeedEvalMode *emodein = NULL;
+  CeedBasis basisin = NULL;
+  CeedElemRestriction rstrin = NULL;
+  for (CeedInt i=0;i<numinputfields;i++) {
+    CeedVector vec;
+    CeedCallBackend(CeedOperatorFieldGetVector(opfields[i], &vec));
+    if (vec=CEED_VECTOR_ACTIVE) {
+      CeedElemRestriction rstr;
+      CeedCallBackend(CeedOperatorFieldGetBasis(opfields[i], &basisin));
+      CeedCallBackend(CeedBasisGetNumComponents(basisin, &ncomp));
+      CeedCallBackend(CeedBasisGetDimension(basisin, &dim));
+      CeedCallBackend(CeedBasisGetDimension(basisin, &dim));
+      CeedCallBackend(CeedOperatorFieldGetElemRestriction(opfields[i], &rstr));
+      if (rstrin && rstrin != rstr) {
+        // LCOV_EXCL_START
+	return CeedError(ceed, CEED_ERROR_BACKEND, "Backend does not implement multi-field non-composite operator diagonal assembly");
+	// LCOV_EXCL_STOP
+      }
+      rstrin = rstr;
+      CeedEvalMode emode;
+      CeedCallBackend(CeedQFunctionFieldGetEvalMode(qffields[i], &emode));
+      switch (emode) {
+        case CEED_EVAL_NONE:
+	case CEED_EVAL_INTERP:
+	  CeedCallBackend(CeedRealloc(numemodein + 1, &emodein));
+	  emodein[numemodein] = emode;
+	  numemodein += 1;
+	  break;
+	case CEED_EVAL_GRAD:
+	  CeedCallBackend(CeedRealloc(numemodein + dim, &emodein));
+	  for (CeedInt d = 0; d < dim; d++) emodein[numemodein + d] = emode;
+	  numemodein += dim;
+	  break;
+	case CEED_EVAL_WEIGHT:
+	case CEED_EVAL_DIV:
+	case CEED_EVAL_CURL:
+	  break;  // Caught by QF Assembly
+      }
+    }
+  }
+
+  // Determine active output basis
+  CeedCallBackend(CeedOperatorGetFields(op, NULL, NULL, NULL, &opfields));
+  CeedCallBackend(CeedQFunctionGetFields(qf, NULL, NULL, NULL, &qffields));
+  CeedInt numemodeout = 0;
+  CeedEvalMode *emodeout = NULL;
+  CeedBasis basisout = NULL;
+  CeedElemRestriction rstrout = NULL;
+  for (CeedInt i=0; i<numoutputfields; i++) {
+    CeedVector vec;
+    CeedCallBackend(CeedOperatorFieldGetVector(opfields[i], &vec));
+    if (vec == CEED_VECTOR_ACTIVE) {
+      CeedElemRestriction rstr;
+      CeedCallBackend(CeedOperatorFieldGetBasis(opfields[i], &basisout));
+      CeedCallBackend(CeedOperatorFieldGetElemRestriction(opfields[i], &rstr));
+      if (rstrout && rstrout != rstr) {
+        // LCOV_EXCL_START
+	return CeedError(ceed, CEED_ERROR_BACKEND, "Backend does not implement multi-field non-composite operator diagonal assembly");
+	// LCOV_EXCL_STOP
+      }
+      rstrout = rstr;
+      CeedEvalMode emode;
+      CeedCallBackend(CeedQFunctionFieldGetEvalMode(qffields[i], &emode));
+      switch (emode) {
+        case CEED_EVAL_NONE:
+	case CEED_EVAL_INTERP:
+	  CeedCallBackend(CeedRealloc(numemodeout + 1, &emodeout));
+	  emodeout[numemodeout] = emode;
+	  numemodeout += 1;
+	  break;
+        case CEED_EVAL_GRAD:
+	  CeedCallBackend(CeedRealloc(numemodeout + dim, &emodeout));
+	  for (CeedInt d = 0; d < dim; d++) emodeout[numemodeout + d] = emode;
+	  numemodeout += dim;
+	  break;
+	case CEED_EVAL_WEIGHT:
+        case CEED_EVAL_DIV:
+        case CEED_EVAL_CURL:
+	  break; // Caught by QF Assembly
+      }
+    }
+  }
+
+  // Operator data struct
+  CeedOperator_Sycl *impl;
+  CeedCallBackend(CeedOperatorGetData(op, &impl));
+  Ceed_Sycl *sycl_data;
+  CeedCallBackend(CeedGetData(ceed, &sycl_data));
+  CeedCallBackend(CeedCalloc(1, &impl->diag));
+  CeedOperatorDiag_Sycl *diag = impl->diag;
+  diag->basisin = basisin;
+  diag->basisout = basisout;
+  diag->h_emodein  = emodein;
+  diag->h_emodeout = emodeout;
+  diag->numemodein  = numemodein;
+  diag->numemodeout = numemodeout;
+
+  // Basis matrices
+  CeedInt nnodes, nqpts;
+  CeedCallBackend(CeedBasisGetNumNodes(basisin, &nnodes));
+  CeedCallBackend(CeedBasisGetNumQuadraturePoints(basisin, &nqpts));
+  diag->nnodes = nnodes;
+  const CeedInt qBytes = nqpts;
+  const CeedInt iBytes = nqpts*nnodes;
+  const CeedInt gBytes = nqpts*nnodes*dim;
+  const CeedScalar *interpin, *interpout, *gradin, *gradout;
+
+  // CEED_EVAL_NONE
+  CeedScalar *identity = NULL;
+  bool evalNone = false;
+  for (CeedInt i = 0; i < numemodein; i++) evalNone = evalNone || (emodein[i] == CEED_EVAL_NONE);
+  for (CeedInt i = 0; i < numemodeout; i++) evalNone = evalNone || (emodeout[i] == CEED_EVAL_NONE);
+  if (evalNone) {
+    CeedCallBackend(CeedCalloc(nqpts * nnodes, &identity));
+    for (CeedInt i = 0; i < (nnodes < nqpts ? nnodes : nqpts); i++) identity[i * nnodes + i] = 1.0;
+    CeedCallSycl(ceed, diag->d_identity = sycl::malloc_device<CeedScalar>(iBytes, sycl_data->sycl_device, sycl_data->sycl_context));
+    CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedScalar>(identity, diag->d_identity, iBytes));
+  }
+
+  // CEED_EVAL_INTERP
+  CeedCallBackend(CeedBasisGetInterp(basisin, &interpin));
+  CeedCallSycl(ceed, diag->d_interpin = sycl::malloc_device<CeedScalar>(iBytes, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedScalar>(interpin,diag->d_interpin,iBytes));
+  CeedCallBackend(CeedBasisGetInterp(basisout, &interpout));
+  CeedCallSycl(ceed, diag->d_interpout = sycl::malloc_device<CeedScalar>(iBytes, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedScalar>(interpout,diag->d_interpout,iBytes));
+
+  // CEED_EVAL_GRAD
+  CeedCallBackend(CeedBasisGetGrad(basisin, &gradin));
+  CeedCallSycl(ceed, diag->d_gradin = sycl::malloc_device<CeedScalar>(gBytes, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedScalar>(gradin,diag->d_gradin,gBytes));
+  CeedCallBackend(CeedBasisGetGrad(basisout, &gradout));
+  CeedCallSycl(ceed, diag->d_gradout = sycl::malloc_device<CeedScalar>(gBytes, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedScalar>(gradout,diag->d_gradout,gBytes));
+
+  // Arrays of emodes
+  CeedCallSycl(ceed, diag->d_emodein = sycl::malloc_device<CeedEvalMode>(numemodein, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedEvalMode>(emodein, diag->d_emodein, numemodein));
+  CeedCallSycl(ceed, diag->d_emodeout = sycl::malloc_device<CeedEvalMode>(numemodeout, sycl_data->sycl_device, sycl_data->sycl_context));
+  CeedCallSycl(ceed, sycl_data->sycl_queue.copy<CeedEvalMode>(emodeout, diag->d_emodeout, numemodeout));
+
+  // Restriction
+  diag->diagrstr = rstrout;
+
+  // Wait for all copies to complete and handle exceptions
+  CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
@@ -635,25 +793,81 @@ static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const 
 static inline int CeedOperatorAssembleDiagonalCore_Sycl(CeedOperator op, CeedVector assembled, CeedRequest *request, const bool pointBlock) {
   Ceed ceed;
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedOperator_Sycl *impl;
+  CeedCallBackend(CeedOperatorGetData(op, &impl));
+
+  // Assemble QFunction
+  CeedVector assembledqf;
+  CeedElemRestriction rstr;
+  CeedCallBackend(CeedOperatorLinearAssembleQFunctionBuildOrUpdate(op, &assembledqf, &rstr, request));
+  CeedCallBackend(CeedElemRestrictionDestroy(&rstr));
+
+  // Setup
+  if (!impl->diag) {
+    CeedCallBackend(CeedOperatorAssembleDiagonalSetup_Sycl(op, pointBlock));
+  }
+  CeedOperatorDiag_Sycl *diag = impl->diag;
+  assert(diag != NULL);
+
+  // Restriction
+  if (pointBlock && !diag->pbdiagrstr) {
+    CeedElemRestriction pbdiagrstr;
+    CeedCallBackend(CreatePBRestriction(diag->diagrstr, &pbdiagrstr));
+    diag->pbdiagrstr = pbdiagrstr;
+  }
+  CeedElemRestriction diagrstr = pointBlock ? diag->pbdiagrstr : diag->diagrstr;
+
+  // Create diagonal vector
+  CeedVector elemdiag = pointBlock ? diag->pbelemdiag : diag->elemdiag;
+  if (!elemdiag) {
+    CeedCallBackend(CeedElemRestrictionCreateVector(diagrstr, NULL, &elemdiag));
+    if (pointBlock) diag->pbelemdiag = elemdiag;
+    else diag->elemdiag = elemdiag;
+  }
+  CeedCallBackend(CeedVectorSetValue(elemdiag, 0.0));
+
+  // Assemble element operator diagonals
+  CeedScalar *elemdiagarray;
+  const CeedScalar *assembledqfarray;
+  CeedCallBackend(CeedVectorGetArray(elemdiag, CEED_MEM_DEVICE, &elemdiagarray));
+  CeedCallBackend(CeedVectorGetArrayRead(assembledqf, CEED_MEM_DEVICE, &assembledqfarray));
+  CeedInt nelem;
+  CeedCallBackend(CeedElemRestrictionGetNumElements(diagrstr, &nelem));
+
+  // Compute the diagonal of B^T D B
+  if (pointBlock) {
+  //  CeedCallBackend(CeedOperatorLinearPointBlockDiagonal_Sycl(sycl_data->sycl_queue, nelem, diag, assembledqfarray, elemdiagarray));
+  } else {
+  //  CeedCallBackend(CeedOperatorLinearDiagonal_Sycl(sycl_data->sycl_queue, nelem, diag, assembledqfarray, elemdiagarray));
+  }
+
+  // Restore arrays
+  CeedCallBackend(CeedVectorRestoreArray(elemdiag, &elemdiagarray));
+  CeedCallBackend(CeedVectorRestoreArrayRead(assembledqf, &assembledqfarray));
+
+  // Assemble local operator diagonal
+  CeedCallBackend(CeedElemRestrictionApply(diagrstr, CEED_TRANSPOSE, elemdiag, assembled, request));
+
+  // Cleanup
+  CeedCallBackend(CeedVectorDestroy(&assembledqf));
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Assemble Linear Diagonal
 //------------------------------------------------------------------------------
 static int CeedOperatorLinearAssembleAddDiagonal_Sycl(CeedOperator op, CeedVector assembled, CeedRequest *request) {
-  Ceed ceed;
-  CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedCallBackend(CeedOperatorAssembleDiagonalCore_Sycl(op, assembled, request, false));
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Assemble Linear Point Block Diagonal
 //------------------------------------------------------------------------------
 static int CeedOperatorLinearAssembleAddPointBlockDiagonal_Sycl(CeedOperator op, CeedVector assembled, CeedRequest *request) {
-  Ceed ceed;
-  CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedCallBackend(CeedOperatorAssembleDiagonalCore_Sycl(op, assembled, request, true));
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
