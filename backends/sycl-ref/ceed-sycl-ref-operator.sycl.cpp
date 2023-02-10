@@ -432,9 +432,143 @@ static int CeedOperatorApplyAdd_Sycl(CeedOperator op, CeedVector invec, CeedVect
 //------------------------------------------------------------------------------
 static inline int CeedOperatorLinearAssembleQFunctionCore_Sycl(CeedOperator op, bool build_objects, CeedVector *assembled, CeedElemRestriction *rstr,
                                                                CeedRequest *request) {
-  Ceed ceed;
+  CeedOperator_Sycl *impl;
+  CeedCallBackend(CeedOperatorGetData(op, &impl));
+  CeedQFunction qf;
+  CeedCallBackend(CeedOperatorGetQFunction(op, &qf));
+  CeedInt  Q, numelements, numinputfields, numoutputfields, size;
+  CeedSize q_size;
+  CeedCallBackend(CeedOperatorGetNumQuadraturePoints(op, &Q));
+  CeedCallBackend(CeedOperatorGetNumElements(op, &numelements));
+  CeedOperatorField *opinputfields, *opoutputfields;
+  CeedCallBackend(CeedOperatorGetFields(op, &numinputfields, &opinputfields, &numoutputfields, &opoutputfields));
+  CeedQFunctionField *qfinputfields, *qfoutputfields;
+  CeedCallBackend(CeedQFunctionGetFields(qf, NULL, &qfinputfields, NULL, &qfoutputfields));
+  CeedVector  vec;
+  CeedInt numactivein = impl->qfnumactivein, numactiveout = impl->qfnumactiveout;
+  CeedVector *activein = impl->qfactivein;
+  CeedScalar *a, *tmp;
+  Ceed ceed, ceedparent;
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  CeedCallBackend(CeedGetOperatorFallbackParentCeed(ceed, &ceedparent));
+  ceedparent = ceedparent ? ceedparent : ceed;
+  CeedScalar *edata[2*CEED_FIELD_MAX];
+
+  // Setup
+  CeedCallBackend(CeedOperatorSetup_Sycl(op));
+
+  // Check for identity
+  bool identityqf;
+  CeedCallBackend(CeedQFunctionIsIdentity(qf, &identityqf));
+  if (identityqf) {
+    // LCOV_EXCL_START
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Assembling identity QFunctions not supported");
+    // LCOV_EXCL_STOP
+  }
+
+  // Input Evecs and Restriction
+  CeedCallBackend(CeedOperatorSetupInputs_Sycl(numinputfields, qfinputfields, opinputfields, NULL, true, edata, impl, request));
+
+  // Count number of active input fields
+  if (!numactivein) {
+    for (CeedInt i = 0; i<numinputfields;i++) {
+      // Get input vector
+      CeedCallBackend(CeedOperatorFieldGetVector(opinputfields[i], &vec));
+      // Check if active input
+      if (vec==CEED_VECTOR_ACTIVE) {
+        CeedCallBackend(CeedQFunctionFieldGetSize(qfinputfields[i], &size));
+	CeedCallBackend(CeedVectorSetValue(impl->qvecsin[i], 0.0));
+	CeedCallBackend(CeedVectorGetArray(impl->qvecsin[i], CEED_MEM_DEVICE, &tmp));
+	CeedCallBackend(CeedRealloc(numactivein + size, &activein));
+	for (CeedInt field=0;field<size;field++) {
+	  q_size = (CeedSize)Q*numelements;
+	  CeedCallBackend(CeedVectorCreate(ceed, q_size, &activein[numactivein + field]));
+	  CeedCallBackend(CeedVectorSetArray(activein[numactivein + field], CEED_MEM_DEVICE, CEED_USE_POINTER, &tmp[field * Q * numelements]));
+	}
+	numactivein += size;
+	CeedCallBackend(CeedVectorRestoreArray(impl->qvecsin[i], &tmp));
+      }
+    }
+    impl->qfnumactivein = numactivein;
+    impl->qfactivein = activein;
+  }
+
+  // Count number of active output fields
+  if (!numactiveout) {
+    for (CeedInt i=0;i<numoutputfields;i++) {
+      // Get output vector
+      CeedCallBackend(CeedOperatorFieldGetVector(opoutputfields[i], &vec));
+      // Check if active output
+      if (vec==CEED_VECTOR_ACTIVE) {
+        CeedCallBackend(CeedQFunctionFieldGetSize(qfoutputfields[i], &size));
+	numactiveout += size;
+      }
+    }
+    impl->qfnumactiveout = numactiveout;
+  }
+
+  // Check size
+  if (!numactivein || !numactiveout) {
+    // LCOV_EXCL_START
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Cannot assemble QFunction without active inputs and outputs");
+    // LCOV_EXCL_STOP
+  }
+
+  // Build objects if needed
+  if (build_objects) {
+    // Create output restriction
+    CeedInt strides[3] = {1, numelements*Q, Q}; /* *NOPAD* */
+    CeedCallBackend(CeedElemRestrictionCreateStrided(ceedparent, numelements, Q, numactivein * numactiveout,
+			                             numactivein * numactiveout * numelements * Q, strides, rstr));
+    // Create assembled vector
+    CeedSize l_size = (CeedSize)numelements*Q*numactivein*numactiveout;
+    CeedCallBackend(CeedVectorCreate(ceedparent, l_size, assembled));
+  }
+  CeedCallBackend(CeedVectorSetValue(*assembled, 0.0));
+  CeedCallBackend(CeedVectorGetArray(*assembled, CEED_MEM_DEVICE, &a));
+
+  // Input basis apply
+  CeedCallBackend(CeedOperatorInputBasis_Sycl(numelements, qfinputfields, opinputfields, numinputfields, true, edata, impl));
+
+  // Assemble QFunction
+  for (CeedInt in=0;in<numactivein;in++) {
+    // Set Inputs
+    CeedCallBackend(CeedVectorSetValue(activein[in], 1.0));
+    if(numactivein > 1) {
+      CeedCallBackend(CeedVectorSetValue(activein[(in + numactivein - 1) % numactivein], 0.0));
+    }
+    // Set Outputs
+    for (CeedInt out = 0;out<numoutputfields;out++) {
+      // Get output vector
+      CeedCallBackend(CeedOperatorFieldGetVector(opoutputfields[out], &vec));
+      // Check if active output
+      if (vec==CEED_VECTOR_ACTIVE) {
+        CeedCallBackend(CeedVectorSetArray(impl->qvecsout[out], CEED_MEM_DEVICE, CEED_USE_POINTER, a));
+	CeedCallBackend(CeedQFunctionFieldGetSize(qfoutputfields[out], &size));
+	a += size*Q*numelements; // Advance the pointer by the size of the output
+      }
+    }
+    // Apply QFunction
+    CeedCallBackend(CeedQFunctionApply(qf, Q * numelements, impl->qvecsin, impl->qvecsout));
+  }
+
+  // Un-set output Qvecs to prevent accidental overwrite of Assembled
+  for (CeedInt out = 0; out<numoutputfields;out++) {
+    // Get output vector
+    CeedCallBackend(CeedOperatorFieldGetVector(opoutputfields[out], &vec));
+    // Check if active output
+    if (vec==CEED_VECTOR_ACTIVE) {
+      CeedCallBackend(CeedVectorTakeArray(impl->qvecsout[out], CEED_MEM_DEVICE, NULL));
+    }
+  }
+
+  // Restore input arrays
+  CeedCallBackend(CeedOperatorRestoreInputs_Sycl(numinputfields, qfinputfields, opinputfields, true, edata, impl));
+
+  // Restore output
+  CeedCallBackend(CeedVectorRestoreArray(*assembled, &a));
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
@@ -459,7 +593,31 @@ static int CeedOperatorLinearAssembleQFunctionUpdate_Sycl(CeedOperator op, CeedV
 static int CreatePBRestriction(CeedElemRestriction rstr, CeedElemRestriction *pbRstr) {
   Ceed ceed;
   CeedCallBackend(CeedElemRestrictionGetCeed(rstr, &ceed));
-  return CeedError(ceed, CEED_ERROR_BACKEND, "Ceed SYCL function not implemented");
+  const CeedInt *offsets;
+  CeedCallBackend(CeedElemRestrictionGetOffsets(rstr, CEED_MEM_HOST, &offsets));
+
+  // Expand offsets
+  CeedInt nelem, ncomp, elemsize, compstride, *pbOffsets;
+  CeedSize l_size;
+  CeedCallBackend(CeedElemRestrictionGetNumElements(rstr, &nelem));
+  CeedCallBackend(CeedElemRestrictionGetNumComponents(rstr, &ncomp));
+  CeedCallBackend(CeedElemRestrictionGetElementSize(rstr, &elemsize));
+  CeedCallBackend(CeedElemRestrictionGetCompStride(rstr, &compstride));
+  CeedCallBackend(CeedElemRestrictionGetLVectorSize(rstr, &l_size));
+  CeedInt shift = ncomp;
+  if (compstride != 1) shift*=ncomp;
+  CeedCallBackend(CeedCalloc(nelem * elemsize, &pbOffsets));
+  for (CeedInt i=0;i<nelem*elemsize;i++) {
+    pbOffsets[i] = offsets[i]*shift;
+  }
+
+  // Create new restriction
+  CeedCallBackend(CeedElemRestrictionCreate(ceed, nelem, elemsize, ncomp * ncomp, 1, l_size * ncomp, CEED_MEM_HOST, CEED_OWN_POINTER, pbOffsets, pbRstr));
+
+  // Cleanup
+  CeedCallBackend(CeedElemRestrictionRestoreOffsets(rstr, &offsets));
+
+  return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
