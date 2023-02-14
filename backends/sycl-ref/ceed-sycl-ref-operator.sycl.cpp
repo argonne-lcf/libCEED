@@ -16,8 +16,32 @@
 #include "../sycl/ceed-sycl-compile.hpp"
 #include "ceed-sycl-ref.hpp"
 
+class CeedOperatorSyclLinearDiagonal;
 class CeedOperatorSyclLinearAssemble;
 class CeedOperatorSyclLinearAssembleFallback;
+
+//------------------------------------------------------------------------------
+//  Get Basis Emode Pointer
+//------------------------------------------------------------------------------
+void CeedOperatorGetBasisPointer_Sycl(const CeedScalar **basisptr, CeedEvalMode emode, const CeedScalar *identity,
+		                      const CeedScalar *interp, const CeedScalar *grad) {
+  switch (emode) {
+    case CEED_EVAL_NONE:
+      *basisptr = identity;
+      break;
+    case CEED_EVAL_INTERP:
+      *basisptr = interp;
+      break;
+    case CEED_EVAL_GRAD:
+      *basisptr = grad;
+      break;
+    case CEED_EVAL_WEIGHT:
+    case CEED_EVAL_DIV:
+    case CEED_EVAL_CURL:
+      break;  // Caught by QF Assembly
+  }
+
+}
 
 //------------------------------------------------------------------------------
 // Destroy operator
@@ -737,8 +761,15 @@ static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const 
   diag->numemodein  = numemodein;
   diag->numemodeout = numemodeout;
 
-  // Basis matrices
+  // Kernel parameters
   CeedInt nnodes, nqpts;
+  CeedCallBackend(CeedBasisGetNumNodes(basisin, &nnodes));
+  CeedCallBackend(CeedBasisGetNumQuadraturePoints(basisin, &nqpts));
+  diag->nnodes = nnodes;
+  diag->nqpts = nqpts;
+  diag->ncomp = ncomp;
+
+  // Basis matrices
   CeedCallBackend(CeedBasisGetNumNodes(basisin, &nnodes));
   CeedCallBackend(CeedBasisGetNumQuadraturePoints(basisin, &nqpts));
   diag->nnodes = nnodes;
@@ -791,6 +822,80 @@ static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const 
 }
 
 //------------------------------------------------------------------------------
+//  Kernel for diagonal assembly
+//------------------------------------------------------------------------------
+static int CeedOperatorLinearDiagonal_Sycl(sycl::queue &sycl_queue, const bool pointBlock, const CeedInt nelem, const CeedOperatorDiag_Sycl *diag, 
+		                           const CeedScalar *assembledqfarray, CeedScalar *elemdiagarray) {
+  const CeedInt nnodes = diag->nnodes;
+  const CeedInt nqpts = diag->nqpts;
+  const CeedInt ncomp = diag->ncomp;
+  const CeedInt numemodein = diag->numemodein;
+  const CeedInt numemodeout = diag->numemodeout;
+
+  const CeedScalar *identity = diag->d_identity;
+  const CeedScalar *interpin = diag->d_interpin;
+  const CeedScalar *gradin = diag->d_gradin;
+  const CeedScalar *interpout = diag->d_interpout;
+  const CeedScalar *gradout = diag->d_gradout;
+  const CeedEvalMode *emodein = diag->d_emodein;
+  const CeedEvalMode *emodeout = diag->d_emodeout;
+
+  const int elemsPerBlock = 1;
+  const int grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
+  sycl::range<1> local_range(nnodes);
+  sycl::range<1> global_range(grid*nnodes);
+  sycl::nd_range<1> kernel_range(global_range, local_range);
+
+  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::nd_item<1>work_item) {
+    CeedInt e = work_item.get_group(0);
+    const CeedInt gridDimx = work_item.get_group_range(0);
+    const CeedInt tid = work_item.get_local_id(0);
+
+    // Compute the diagonal of B^T D B
+    // Each element
+    for (;e<nelem; e+=gridDimx) {
+      CeedInt dout = -1;
+      // Each basis eval mode pair
+      for (CeedInt eout = 0; eout<numemodeout;eout++) {
+        const CeedScalar *bt = NULL;
+	if(emodeout[eout] == CEED_EVAL_GRAD) ++dout;
+	CeedOperatorGetBasisPointer_Sycl(&bt, emodeout[eout], identity, interpout, &gradout[dout*nqpts*nnodes]);
+	CeedInt din = -1;
+	for (CeedInt ein=0;ein<numemodein;ein++) {
+	  const CeedScalar *b = NULL;
+	  if (emodein[ein]==CEED_EVAL_GRAD) ++din;
+	  CeedOperatorGetBasisPointer_Sycl(&b, emodein[ein],identity,interpin, &gradin[din*nqpts*nnodes]);
+	  // Each component
+	  for (CeedInt compOut = 0; compOut < ncomp;compOut++) {
+	    // Each qpoint/node pair
+	    if (pointBlock) {
+	      // Point Block Diagonal
+	      for (CeedInt compIn = 0;compIn<ncomp;compIn++) {
+	        CeedScalar evalue = 0.0;
+		for(CeedInt q=0;q<nqpts;q++) {
+		  const CeedScalar qfvalue = assembledqfarray[((((ein*ncomp+compIn)*numemodeout + eout)*ncomp+compOut)*nelem + e)*nqpts + q];
+		  evalue += bt[q*nnodes+tid]*qfvalue*b[q*nnodes+tid];
+		}
+		elemdiagarray[((compOut*ncomp+compIn)*nelem + e)*nnodes + tid] += evalue;
+	      }
+	    } else {
+	      // Diagonal Only
+	      CeedScalar evalue = 0.0;
+	      for (CeedInt q = 0;q<nqpts;q++) {
+	        const CeedScalar qfvalue = assembledqfarray[((((ein*ncomp+compOut)*numemodeout+eout)*ncomp+compOut)*nelem + e)*nqpts + q];
+		evalue += bt[q*nnodes+tid]*qfvalue*b[q*nnodes+tid];
+	      }
+	      elemdiagarray[(compOut*nelem + e)*nnodes + tid] += evalue;
+	    }
+	  }
+	}
+      }
+    }
+  });
+  return CEED_ERROR_SUCCESS;
+}
+
+//------------------------------------------------------------------------------
 // Assemble diagonal common code
 //------------------------------------------------------------------------------
 static inline int CeedOperatorAssembleDiagonalCore_Sycl(CeedOperator op, CeedVector assembled, CeedRequest *request, const bool pointBlock) {
@@ -798,6 +903,8 @@ static inline int CeedOperatorAssembleDiagonalCore_Sycl(CeedOperator op, CeedVec
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
   CeedOperator_Sycl *impl;
   CeedCallBackend(CeedOperatorGetData(op, &impl));
+  Ceed_Sycl *sycl_data;
+  CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
   // Assemble QFunction
   CeedVector assembledqf;
@@ -838,11 +945,11 @@ static inline int CeedOperatorAssembleDiagonalCore_Sycl(CeedOperator op, CeedVec
   CeedCallBackend(CeedElemRestrictionGetNumElements(diagrstr, &nelem));
 
   // Compute the diagonal of B^T D B
-  if (pointBlock) {
+  // if (pointBlock) {
   //  CeedCallBackend(CeedOperatorLinearPointBlockDiagonal_Sycl(sycl_data->sycl_queue, nelem, diag, assembledqfarray, elemdiagarray));
-  } else {
-  //  CeedCallBackend(CeedOperatorLinearDiagonal_Sycl(sycl_data->sycl_queue, nelem, diag, assembledqfarray, elemdiagarray));
-  }
+  //} else {
+  CeedCallBackend(CeedOperatorLinearDiagonal_Sycl(sycl_data->sycl_queue, pointBlock, nelem, diag, assembledqfarray, elemdiagarray));
+  // }
 
   // Restore arrays
   CeedCallBackend(CeedVectorRestoreArray(elemdiag, &elemdiagarray));
