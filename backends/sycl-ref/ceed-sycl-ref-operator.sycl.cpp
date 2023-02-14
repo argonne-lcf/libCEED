@@ -16,6 +16,9 @@
 #include "../sycl/ceed-sycl-compile.hpp"
 #include "ceed-sycl-ref.hpp"
 
+class CeedOperatorSyclLinearAssemble;
+class CeedOperatorSyclLinearAssembleFallback;
+
 //------------------------------------------------------------------------------
 // Destroy operator
 //------------------------------------------------------------------------------
@@ -113,7 +116,7 @@ static int CeedOperatorSetupFields_Sycl(CeedQFunction qf, CeedOperator op, bool 
 
       // Check whether this field can skip the element restriction:
       // must be passive input, with emode NONE, and have a strided restriction with CEED_STRIDES_BACKEND.
-      
+
       // First, check whether the field is input or output:
       if (isinput) {
         // Check for passive input:
@@ -156,7 +159,7 @@ static int CeedOperatorSetupFields_Sycl(CeedQFunction qf, CeedOperator op, bool 
 	q_size = (CeedSize)numelements * Q * size;
 	CeedCallBackend(CeedVectorCreate(ceed, q_size, &qvecs[i]));
 	break;
-      case CEED_EVAL_WEIGHT: // Only on input fields
+      case CEED_EVAL_WEIGHT:  // Only on input fields
 	CeedCallBackend(CeedOperatorFieldGetBasis(opfields[i], &basis));
 	q_size = (CeedSize)numelements * Q;
 	CeedCallBackend(CeedVectorCreate(ceed, q_size, &qvecs[i]));
@@ -233,7 +236,7 @@ static inline int CeedOperatorSetupInputs_Sycl(CeedInt numinputfields, CeedQFunc
     }
 
     CeedCallBackend(CeedQFunctionFieldGetEvalMode(qfinputfields[i], &emode));
-    if (emode == CEED_EVAL_WEIGHT) { // Skip
+    if (emode == CEED_EVAL_WEIGHT) {  // Skip
     } else {
       // Get input vector
       CeedCallBackend(CeedOperatorFieldGetVector(opinputfields[i], &vec));
@@ -249,7 +252,7 @@ static inline int CeedOperatorSetupInputs_Sycl(CeedInt numinputfields, CeedQFunc
 	// Get evec
 	CeedCallBackend(CeedVectorGetArrayRead(impl->evecs[i], CEED_MEM_DEVICE, (const CeedScalar **)&edata[i]));
       }
-    } 
+    }
   }
   return CEED_ERROR_SUCCESS;
 }
@@ -293,9 +296,9 @@ static inline int CeedOperatorInputBasis_Sycl(CeedInt numelements, CeedQFunction
       case CEED_EVAL_WEIGHT:
 	break;  // No action
       case CEED_EVAL_DIV:
-	break; // TODO: Not implemented
+	break;  // TODO: Not implemented
       case CEED_EVAL_CURL:
-	break; // TODO: Not implemented
+	break;  // TODO: Not implemented
     }
   }
   return CEED_ERROR_SUCCESS;
@@ -316,9 +319,9 @@ static inline int CeedOperatorRestoreInputs_Sycl(CeedInt numinputfields, CeedQFu
       if (vec == CEED_VECTOR_ACTIVE) continue;
     }
     CeedCallBackend(CeedQFunctionFieldGetEvalMode(qfinputfields[i], &emode));
-    if (emode == CEED_EVAL_WEIGHT) { // Skip
+    if (emode == CEED_EVAL_WEIGHT) {  // Skip
     } else {
-      if (!impl->evecs[i]) { // This was a skiprestrict case
+      if (!impl->evecs[i]) {  // This was a skiprestrict case
         CeedCallBackend(CeedOperatorFieldGetVector(opinputfields[i], &vec));
 	CeedCallBackend(CeedVectorRestoreArrayRead(vec, (const CeedScalar **)&edata[i]));
       } else {
@@ -396,7 +399,7 @@ static int CeedOperatorApplyAdd_Sycl(CeedOperator op, CeedVector invec, CeedVect
 	Ceed ceed;
 	CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
 	return CeedError(ceed, CEED_ERROR_BACKEND, "CEED_EVAL_WEIGHT cannot be an output evaluation mode");
-	break; // Should not occur
+	break;  // Should not occur
       case CEED_EVAL_DIV:
 	break;  // TODO: Not implemented
       case CEED_EVAL_CURL:
@@ -507,7 +510,7 @@ static inline int CeedOperatorLinearAssembleQFunctionCore_Sycl(CeedOperator op, 
     impl->qfnumactiveout = numactiveout;
   }
 
-  // Check size
+  // Check sizes
   if (!numactivein || !numactiveout) {
     // LCOV_EXCL_START
     return CeedError(ceed, CEED_ERROR_BACKEND, "Cannot assemble QFunction without active inputs and outputs");
@@ -715,7 +718,7 @@ static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const 
 	case CEED_EVAL_WEIGHT:
         case CEED_EVAL_DIV:
         case CEED_EVAL_CURL:
-	  break; // Caught by QF Assembly
+	  break;  // Caught by QF Assembly
       }
     }
   }
@@ -977,6 +980,29 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   Ceed_Sycl *sycl_data;
   CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
+  // Kernel setup
+  int elemsPerBlock = 1;
+  asmb->elemsPerBlock = elemsPerBlock;
+  CeedInt block_size = esize*esize*elemsPerBlock;
+  CeedInt maxThreadsPerBlock = sycl_data->sycl_device.get_info<sycl::info::device::max_work_group_size>();
+  bool fallback = block_size > maxThreadsPerBlock;
+  asmb->fallback = fallback;
+  if (fallback) {
+    // Use fallback kernel with 1D threadblock
+    block_size = esize*elemsPerBlock;
+    asmb->block_size_x = esize;
+    asmb->block_size_y = 1; 
+  } else {  // Use kernel with 2D threadblock
+    asmb->block_size_x = esize;
+    asmb->block_size_y = esize;
+  }
+  asmb->numemodein = num_emode_in;
+  asmb->numemodeout = num_emode_out;
+  asmb->nqpts = nqpts;
+  asmb->nnodes = esize;
+  asmb->block_size = block_size;
+  asmb->ncomp = ncomp;
+
   // Build 'full' B matrices (not 1D arrays used for tensor-product matrices
   const CeedScalar *interp_in, *grad_in;
   CeedCallBackend(CeedBasisGetInterp(basis_in, &interp_in));
@@ -1026,6 +1052,145 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
 }
 
 //------------------------------------------------------------------------------
+// Matrix assembly kernel for low-order elements (2D thread block)
+//------------------------------------------------------------------------------
+static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOperator_Sycl *impl, const CeedScalar *qf_array,
+		                           CeedScalar *values_array) {
+  // This kernels assumes B_in and B_out have the same number of quadrature points and basis points.
+  // TODO: expand to more general cases
+  CeedOperatorAssemble_Sycl *asmb = impl->asmb;
+  const CeedInt nelem = asmb->nelem;
+  const CeedInt nnodes = asmb->nnodes;
+  const CeedInt ncomp = asmb->ncomp;
+  const CeedInt nqpts = asmb->nqpts;
+  const CeedInt numemodein  = asmb->numemodein;
+  const CeedInt numemodeout = asmb->numemodeout;
+
+  const CeedInt comp_out_stride = nnodes*nnodes;
+  const CeedInt comp_in_stride = comp_out_stride * ncomp;
+  const CeedInt e_stride = comp_in_stride * ncomp;
+  // Strides for QF array, slowest --> fastest: emode_in, comp_in, emode_out, comp_out, elem, qpt
+  const CeedInt qe_stride = nqpts;
+  const CeedInt qcomp_out_stride = nelem*qe_stride;
+  const CeedInt qemode_out_stride = qcomp_out_stride*ncomp;
+  const CeedInt qcomp_in_stride = qemode_out_stride*numemodeout;
+  const CeedInt qemode_in_stride = qcomp_in_stride*ncomp;
+
+  CeedScalar *B_in, *B_out;
+  B_in = asmb->d_B_in;
+  B_out = asmb->d_B_out;
+  const CeedInt elemsPerBlock = asmb->elemsPerBlock;
+  const CeedInt block_size_x = asmb->block_size_x;
+  const CeedInt block_size_y = asmb->block_size_y;
+
+  const CeedInt grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
+  sycl::range<1> local_range(block_size_x*block_size_y);
+  sycl::range<1> global_range(grid*block_size_x*block_size_y);
+  sycl::nd_range<1> kernel_range(global_range, local_range);
+  
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::nd_item<1> work_item) {
+    CeedInt e = work_item.get_group(0);
+    const CeedInt gridDimx = work_item.get_group_range(0);
+    const CeedInt local_id = work_item.get_local_id(0);
+    const int i = local_id % block_size_x;  // The output row index of each B^TDB operation
+    const int l = local_id / block_size_x;  // The output column index of each B^TDB operation
+					    // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
+    for (;e<nelem;e+=gridDimx) {
+      for (CeedInt comp_in = 0; comp_in<ncomp; comp_in++) {
+        for (CeedInt comp_out = 0; comp_out<ncomp;comp_out++) {
+          CeedScalar result = 0.0;
+          CeedInt qf_index_comp = qcomp_in_stride * comp_in + qcomp_out_stride * comp_out + qe_stride * e;
+          for (CeedInt emode_in = 0; emode_in < numemodein; emode_in++) {
+            CeedInt b_in_index = emode_in*nqpts*nnodes;
+            for (CeedInt emode_out = 0; emode_out < numemodeout; emode_out++) {
+              CeedInt b_out_index = emode_out*nqpts*nnodes;
+              CeedInt qf_index = qf_index_comp + qemode_out_stride*emode_out + qemode_in_stride*emode_in;
+              // Perform the B^T D B operation for this 'chunk' of D (the qf_array)
+              for (CeedInt j = 0; j < nqpts; j++) {
+                result += B_out[b_out_index + j * nnodes + i] * qf_array[qf_index + j] * B_in[b_in_index + j * nnodes + l];
+              }
+            }  // end of emode_out
+          }    // end of emode_in
+          CeedInt val_index = comp_in_stride*comp_in + comp_out_stride*comp_out + e_stride*e + nnodes*i + l;
+          values_array[val_index] = result;
+        }  // end of out component
+      }    // end of in component
+    }      // end of element loop
+  });
+
+  return CEED_ERROR_SUCCESS;
+}
+
+//------------------------------------------------------------------------------
+// Fallback kernel for larger orders (1D thread block)
+//------------------------------------------------------------------------------
+static int CeedOperatorLinearAssembleFallback_Sycl(sycl::queue &sycl_queue, const CeedOperator_Sycl *impl, const CeedScalar *qf_array,
+		                                   CeedScalar *values_array) {
+  // This kernel assumes B_in and B_out have the same number of quadrature points and basis points.
+  // TODO: expand to more general cases
+  CeedOperatorAssemble_Sycl *asmb = impl->asmb;
+  const CeedInt nelem = asmb->nelem;
+  const CeedInt nnodes = asmb->nnodes;
+  const CeedInt ncomp = asmb->ncomp;
+  const CeedInt nqpts = asmb->nqpts;
+  const CeedInt numemodein  = asmb->numemodein;
+  const CeedInt numemodeout = asmb->numemodeout;
+
+  const CeedInt comp_out_stride = nnodes*nnodes;
+  const CeedInt comp_in_stride = comp_out_stride * ncomp;
+  const CeedInt e_stride = comp_in_stride * ncomp;
+  // Strides for QF array, slowest --> fastest: emode_in, comp_in, emode_out, comp_out, elem, qpt
+  const CeedInt qe_stride = nqpts;
+  const CeedInt qcomp_out_stride = nelem*qe_stride;
+  const CeedInt qemode_out_stride = qcomp_out_stride*ncomp;
+  const CeedInt qcomp_in_stride = qemode_out_stride*numemodeout;
+  const CeedInt qemode_in_stride = qcomp_in_stride*ncomp;
+
+  CeedScalar *B_in, *B_out;
+  B_in = asmb->d_B_in;
+  B_out = asmb->d_B_out;
+  const CeedInt elemsPerBlock = asmb->elemsPerBlock;
+  const CeedInt block_size_x = asmb->block_size_x;
+  const CeedInt block_size_y = asmb->block_size_y;  // This will be 1 for the fallback kernel
+
+  const CeedInt grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
+  sycl::range<1> local_range(block_size_x*block_size_y);
+  sycl::range<1> global_range(grid*block_size_x*block_size_y);
+  sycl::nd_range<1> kernel_range(global_range, local_range);
+
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssembleFallback>(kernel_range, [=](sycl::nd_item<1> work_item) {
+    CeedInt e = work_item.get_group(0);
+    const CeedInt gridDimx = work_item.get_group_range(0);
+    const int l = work_item.get_local_id(0);  // The output column index of each B^TDB operation
+					      // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
+    for (;e<nelem;e+=gridDimx) {
+      for (CeedInt comp_in = 0; comp_in<ncomp; comp_in++) {
+        for (CeedInt comp_out = 0; comp_out<ncomp;comp_out++) {
+	  for (CeedInt i = 0; i<nnodes; i++) {
+            CeedScalar result = 0.0;
+	    CeedInt qf_index_comp = qcomp_in_stride * comp_in + qcomp_out_stride * comp_out + qe_stride * e;
+	    for (CeedInt emode_in = 0; emode_in < numemodein; emode_in++) {
+	      CeedInt b_in_index = emode_in*nqpts*nnodes;
+	      for (CeedInt emode_out = 0; emode_out < numemodeout; emode_out++) {
+	        CeedInt b_out_index = emode_out*nqpts*nnodes;
+	        CeedInt qf_index = qf_index_comp + qemode_out_stride*emode_out + qemode_in_stride*emode_in;
+	        // Perform the B^T D B operation for this 'chunk' of D (the qf_array)
+                for (CeedInt j = 0; j < nqpts; j++) {
+	          result += B_out[b_out_index + j * nnodes + i] * qf_array[qf_index + j] * B_in[b_in_index + j * nnodes + l];
+	        }
+              }  // end of emode_out
+	    }    // end of emode_in
+            CeedInt val_index = comp_in_stride*comp_in + comp_out_stride*comp_out + e_stride*e + nnodes*i + l;
+	    values_array[val_index] = result;
+          } // end of loop over element node index, i
+        }   // end of out component
+      }     // end of in component
+    }       // end of element loop
+  });
+  return CEED_ERROR_SUCCESS;
+}
+
+//------------------------------------------------------------------------------
 // Assemble matrix data for COO matrix of assembled operator.
 // The sparsity pattern is set by CeedOperatorLinearAssembleSymbolic.
 //
@@ -1038,6 +1203,8 @@ static int CeedSingleOperatorAssemble_Sycl(CeedOperator op, CeedInt offset, Ceed
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
   CeedOperator_Sycl *impl;
   CeedCallBackend(CeedOperatorGetData(op, &impl));
+  Ceed_Sycl *sycl_data;
+  CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
   // Setup
   if (!impl->asmb) {
@@ -1057,7 +1224,13 @@ static int CeedSingleOperatorAssemble_Sycl(CeedOperator op, CeedInt offset, Ceed
   CeedCallBackend(CeedVectorGetArrayRead(assembled_qf, CEED_MEM_DEVICE, &qf_array));
 
   // Compute B^T D B
-  // CeedCallBackend(CeedOperatorLinearAssemble_Sycl(sycl_data->sycl_queue,nelem,impl,qf_array,values_array));
+  if(impl->asmb->fallback) {
+    CeedCallBackend(CeedOperatorLinearAssembleFallback_Sycl(sycl_data->sycl_queue,impl,qf_array,values_array));
+  } else {
+    CeedCallBackend(CeedOperatorLinearAssemble_Sycl(sycl_data->sycl_queue,impl,qf_array,values_array));
+  }
+  // Wait for kernels to be completed
+  sycl_data->sycl_queue.wait_and_throw();
 
   // Restore arrays
   CeedCallBackend(CeedVectorRestoreArray(values, &values_array));
