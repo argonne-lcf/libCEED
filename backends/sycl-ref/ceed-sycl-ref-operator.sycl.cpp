@@ -770,9 +770,6 @@ static inline int CeedOperatorAssembleDiagonalSetup_Sycl(CeedOperator op, const 
   diag->ncomp = ncomp;
 
   // Basis matrices
-  CeedCallBackend(CeedBasisGetNumNodes(basisin, &nnodes));
-  CeedCallBackend(CeedBasisGetNumQuadraturePoints(basisin, &nqpts));
-  diag->nnodes = nnodes;
   const CeedInt qBytes = nqpts;
   const CeedInt iBytes = nqpts*nnodes;
   const CeedInt gBytes = nqpts*nnodes*dim;
@@ -842,18 +839,30 @@ static int CeedOperatorLinearDiagonal_Sycl(sycl::queue &sycl_queue, const bool p
 
   const int elemsPerBlock = 1;
   const int grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
-  sycl::range<1> local_range(nnodes);
-  sycl::range<1> global_range(grid*nnodes);
-  sycl::nd_range<1> kernel_range(global_range, local_range);
+  sycl::range<3> local_range(nnodes,1,elemsPerBlock);
+  sycl::range<3> global_range(grid*nnodes,1,elemsPerBlock);
+  sycl::nd_range<3> kernel_range(global_range, local_range);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::nd_item<1>work_item) {
-    CeedInt e = work_item.get_group(0);
+  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::nd_item<3>work_item) {
+    const CeedInt blockIdx = work_item.get_group(0);
+    const CeedInt blockIdy = work_item.get_group(1);
+    const CeedInt blockIdz = work_item.get_group(2);
     const CeedInt gridDimx = work_item.get_group_range(0);
-    const CeedInt tid = work_item.get_local_id(0);
+    const CeedInt gridDimy = work_item.get_group_range(1);
+    const CeedInt gridDimz = work_item.get_group_range(2);
+    const CeedInt threadIdx = work_item.get_local_id(0);
+    const CeedInt threadIdy = work_item.get_local_id(1);
+    const CeedInt threadIdz = work_item.get_local_id(2);
+    const CeedInt blockDimx = work_item.get_local_range(0);
+    const CeedInt blockDimy = work_item.get_local_range(1);
+    const CeedInt blockDimz = work_item.get_local_range(2);
+    //CeedInt e = work_item.get_group(0);
+    //const CeedInt tid = work_item.get_local_id(0);
+    const CeedInt tid = threadIdx;
 
     // Compute the diagonal of B^T D B
     // Each element
-    for (;e<nelem; e+=gridDimx) {
+    for (CeedInt e = blockIdx*blockDimz+threadIdz;e<nelem; e+=gridDimx*blockDimz) {
       CeedInt dout = -1;
       // Each basis eval mode pair
       for (CeedInt eout = 0; eout<numemodeout;eout++) {
@@ -950,6 +959,9 @@ static inline int CeedOperatorAssembleDiagonalCore_Sycl(CeedOperator op, CeedVec
   //} else {
   CeedCallBackend(CeedOperatorLinearDiagonal_Sycl(sycl_data->sycl_queue, pointBlock, nelem, diag, assembledqfarray, elemdiagarray));
   // }
+
+  // Wait for queue to complete and handle exceptions
+  sycl_data->sycl_queue.wait_and_throw();
 
   // Restore arrays
   CeedCallBackend(CeedVectorRestoreArray(elemdiag, &elemdiagarray));
@@ -1098,7 +1110,7 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
     // Use fallback kernel with 1D threadblock
     block_size = esize*elemsPerBlock;
     asmb->block_size_x = esize;
-    asmb->block_size_y = 1; 
+    asmb->block_size_y = 1;
   } else {  // Use kernel with 2D threadblock
     asmb->block_size_x = esize;
     asmb->block_size_y = esize;
@@ -1191,18 +1203,27 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
   const CeedInt block_size_y = asmb->block_size_y;
 
   const CeedInt grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
-  sycl::range<1> local_range(block_size_x*block_size_y);
-  sycl::range<1> global_range(grid*block_size_x*block_size_y);
-  sycl::nd_range<1> kernel_range(global_range, local_range);
+  sycl::range<3> local_range(block_size_x,block_size_y,elemsPerBlock);
+  sycl::range<3> global_range(grid*block_size_x,block_size_y,elemsPerBlock);
+  sycl::nd_range<3> kernel_range(global_range, local_range);
   
-  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::nd_item<1> work_item) {
-    CeedInt e = work_item.get_group(0);
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::nd_item<3> work_item) {
+    const CeedInt blockIdx = work_item.get_group(0);
+    const CeedInt blockIdy = work_item.get_group(1);
+    const CeedInt blockIdz = work_item.get_group(2);
     const CeedInt gridDimx = work_item.get_group_range(0);
-    const CeedInt local_id = work_item.get_local_id(0);
-    const int i = local_id % block_size_x;  // The output row index of each B^TDB operation
-    const int l = local_id / block_size_x;  // The output column index of each B^TDB operation
-					    // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
-    for (;e<nelem;e+=gridDimx) {
+    const CeedInt gridDimy = work_item.get_group_range(1);
+    const CeedInt gridDimz = work_item.get_group_range(2);
+    const CeedInt threadIdx = work_item.get_local_id(0);
+    const CeedInt threadIdy = work_item.get_local_id(1);
+    const CeedInt threadIdz = work_item.get_local_id(2);
+    const CeedInt blockDimx = work_item.get_local_range(0);
+    const CeedInt blockDimy = work_item.get_local_range(1);
+    const CeedInt blockDimz = work_item.get_local_range(2);
+    const int i = threadIdx;  // The output row index of each B^TDB operation
+    const int l = threadIdy;  // The output column index of each B^TDB operation
+			      // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
+    for (CeedInt e = blockIdx*blockDimz + threadIdz;e<nelem;e+=gridDimx*blockDimz) {
       for (CeedInt comp_in = 0; comp_in<ncomp; comp_in++) {
         for (CeedInt comp_out = 0; comp_out<ncomp;comp_out++) {
           CeedScalar result = 0.0;
@@ -1261,16 +1282,28 @@ static int CeedOperatorLinearAssembleFallback_Sycl(sycl::queue &sycl_queue, cons
   const CeedInt block_size_y = asmb->block_size_y;  // This will be 1 for the fallback kernel
 
   const CeedInt grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
-  sycl::range<1> local_range(block_size_x*block_size_y);
-  sycl::range<1> global_range(grid*block_size_x*block_size_y);
-  sycl::nd_range<1> kernel_range(global_range, local_range);
+  sycl::range<3> local_range(block_size_x,block_size_y,elemsPerBlock);
+  sycl::range<3> global_range(grid*block_size_x,block_size_y,elemsPerBlock);
+  sycl::nd_range<3> kernel_range(global_range, local_range);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearAssembleFallback>(kernel_range, [=](sycl::nd_item<1> work_item) {
-    CeedInt e = work_item.get_group(0);
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssembleFallback>(kernel_range, [=](sycl::nd_item<3> work_item) {
+    // CeedInt e = work_item.get_group(0);
+    const CeedInt blockIdx = work_item.get_group(0);
+    const CeedInt blockIdy = work_item.get_group(1);
+    const CeedInt blockIdz = work_item.get_group(2);
     const CeedInt gridDimx = work_item.get_group_range(0);
-    const int l = work_item.get_local_id(0);  // The output column index of each B^TDB operation
-					      // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
-    for (;e<nelem;e+=gridDimx) {
+    const CeedInt gridDimy = work_item.get_group_range(1);
+    const CeedInt gridDimz = work_item.get_group_range(2);
+    const CeedInt threadIdx = work_item.get_local_id(0);
+    const CeedInt threadIdy = work_item.get_local_id(1);
+    const CeedInt threadIdz = work_item.get_local_id(2);
+    const CeedInt blockDimx = work_item.get_local_range(0);
+    const CeedInt blockDimy = work_item.get_local_range(1);
+    const CeedInt blockDimz = work_item.get_local_range(2);
+    //const int l = work_item.get_local_id(0);  // The output column index of each B^TDB operation
+    const int l = threadIdx;  // The output column index of each B^TDB operation
+			      // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
+    for (CeedInt e = blockIdx*blockDimz+threadIdz;e<nelem;e+=gridDimx*blockDimz) {
       for (CeedInt comp_in = 0; comp_in<ncomp; comp_in++) {
         for (CeedInt comp_out = 0; comp_out<ncomp;comp_out++) {
 	  for (CeedInt i = 0; i<nnodes; i++) {
