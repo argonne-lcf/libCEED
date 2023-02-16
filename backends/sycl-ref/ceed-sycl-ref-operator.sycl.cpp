@@ -1185,6 +1185,8 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
   const CeedInt numemodein  = asmb->numemodein;
   const CeedInt numemodeout = asmb->numemodeout;
 
+  // Strides for final output ordering, determined by the reference (inference) implementation of the symbolic assembly, slowest --> fastest: element,
+  // comp_in, comp_out, node_row, node_col
   const CeedInt comp_out_stride = nnodes*nnodes;
   const CeedInt comp_in_stride = comp_out_stride * ncomp;
   const CeedInt e_stride = comp_in_stride * ncomp;
@@ -1264,6 +1266,8 @@ static int CeedOperatorLinearAssembleFallback_Sycl(sycl::queue &sycl_queue, cons
   const CeedInt numemodein  = asmb->numemodein;
   const CeedInt numemodeout = asmb->numemodeout;
 
+  // Strides for final output ordering, determined by the reference (interface) implementation of the symbolic assembly, slowest --> fastest: elememt,
+  // comp_in, comp_out, node_row, node_col
   const CeedInt comp_out_stride = nnodes*nnodes;
   const CeedInt comp_in_stride = comp_out_stride * ncomp;
   const CeedInt e_stride = comp_in_stride * ncomp;
