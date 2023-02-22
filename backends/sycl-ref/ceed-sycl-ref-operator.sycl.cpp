@@ -835,59 +835,48 @@ static int CeedOperatorLinearDiagonal_Sycl(sycl::queue &sycl_queue, const bool p
   const CeedEvalMode *emodein   = diag->d_emodein;
   const CeedEvalMode *emodeout  = diag->d_emodeout;
 
-  const int         elemsPerBlock = 1;
-  const int         grid          = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
-  sycl::range<3>    local_range(nnodes, 1, elemsPerBlock);
-  sycl::range<3>    global_range(grid * nnodes, 1, elemsPerBlock);
-  sycl::nd_range<3> kernel_range(global_range, local_range);
+  sycl::range<1> kernel_range(nelem*nnodes);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::nd_item<3> work_item) {
-    const CeedInt blockIdx  = work_item.get_group(0);
-    const CeedInt gridDimx  = work_item.get_group_range(0);
-    const CeedInt threadIdx = work_item.get_local_id(0);
-    const CeedInt threadIdz = work_item.get_local_id(2);
-    const CeedInt blockDimz = work_item.get_local_range(2);
-
-    const CeedInt tid = threadIdx;
+  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::id<1> idx) {
+    const CeedInt tid = idx % nnodes;
+    const CeedInt e   = idx / nnodes;
 
     // Compute the diagonal of B^T D B
     // Each element
-    for (CeedInt e = blockIdx * blockDimz + threadIdz; e < nelem; e += gridDimx * blockDimz) {
-      CeedInt dout = -1;
-      // Each basis eval mode pair
-      for (CeedInt eout = 0; eout < numemodeout; eout++) {
-        const CeedScalar *bt = NULL;
-        if (emodeout[eout] == CEED_EVAL_GRAD) ++dout;
-        CeedOperatorGetBasisPointer_Sycl(&bt, emodeout[eout], identity, interpout, &gradout[dout * nqpts * nnodes]);
-        CeedInt din = -1;
-        for (CeedInt ein = 0; ein < numemodein; ein++) {
-          const CeedScalar *b = NULL;
-          if (emodein[ein] == CEED_EVAL_GRAD) ++din;
-          CeedOperatorGetBasisPointer_Sycl(&b, emodein[ein], identity, interpin, &gradin[din * nqpts * nnodes]);
-          // Each component
-          for (CeedInt compOut = 0; compOut < ncomp; compOut++) {
-            // Each qpoint/node pair
-            if (pointBlock) {
-              // Point Block Diagonal
-              for (CeedInt compIn = 0; compIn < ncomp; compIn++) {
-                CeedScalar evalue = 0.0;
-                for (CeedInt q = 0; q < nqpts; q++) {
-                  const CeedScalar qfvalue =
-                      assembledqfarray[((((ein * ncomp + compIn) * numemodeout + eout) * ncomp + compOut) * nelem + e) * nqpts + q];
-                  evalue += bt[q * nnodes + tid] * qfvalue * b[q * nnodes + tid];
-                }
-                elemdiagarray[((compOut * ncomp + compIn) * nelem + e) * nnodes + tid] += evalue;
-              }
-            } else {
-              // Diagonal Only
+    CeedInt dout = -1;
+    // Each basis eval mode pair
+    for (CeedInt eout = 0; eout < numemodeout; eout++) {
+      const CeedScalar *bt = NULL;
+      if (emodeout[eout] == CEED_EVAL_GRAD) ++dout;
+      CeedOperatorGetBasisPointer_Sycl(&bt, emodeout[eout], identity, interpout, &gradout[dout * nqpts * nnodes]);
+      CeedInt din = -1;
+      for (CeedInt ein = 0; ein < numemodein; ein++) {
+        const CeedScalar *b = NULL;
+        if (emodein[ein] == CEED_EVAL_GRAD) ++din;
+        CeedOperatorGetBasisPointer_Sycl(&b, emodein[ein], identity, interpin, &gradin[din * nqpts * nnodes]);
+        // Each component
+        for (CeedInt compOut = 0; compOut < ncomp; compOut++) {
+          // Each qpoint/node pair
+          if (pointBlock) {
+            // Point Block Diagonal
+            for (CeedInt compIn = 0; compIn < ncomp; compIn++) {
               CeedScalar evalue = 0.0;
               for (CeedInt q = 0; q < nqpts; q++) {
                 const CeedScalar qfvalue =
-                    assembledqfarray[((((ein * ncomp + compOut) * numemodeout + eout) * ncomp + compOut) * nelem + e) * nqpts + q];
+                    assembledqfarray[((((ein * ncomp + compIn) * numemodeout + eout) * ncomp + compOut) * nelem + e) * nqpts + q];
                 evalue += bt[q * nnodes + tid] * qfvalue * b[q * nnodes + tid];
               }
-              elemdiagarray[(compOut * nelem + e) * nnodes + tid] += evalue;
+              elemdiagarray[((compOut * ncomp + compIn) * nelem + e) * nnodes + tid] += evalue;
             }
+          } else {
+            // Diagonal Only
+            CeedScalar evalue = 0.0;
+            for (CeedInt q = 0; q < nqpts; q++) {
+              const CeedScalar qfvalue =
+                  assembledqfarray[((((ein * ncomp + compOut) * numemodeout + eout) * ncomp + compOut) * nelem + e) * nqpts + q];
+              evalue += bt[q * nnodes + tid] * qfvalue * b[q * nnodes + tid];
+            }
+            elemdiagarray[(compOut * nelem + e) * nnodes + tid] += evalue;
           }
         }
       }
@@ -1094,7 +1083,7 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   // Kernel setup
   int elemsPerBlock          = 1;
   asmb->elemsPerBlock        = elemsPerBlock;
-  CeedInt block_size         = esize * esize * elemsPerBlock;
+  CeedInt block_size         = esize * esize * elemsPerBlock; /*
   CeedInt maxThreadsPerBlock = sycl_data->sycl_device.get_info<sycl::info::device::max_work_group_size>();
   bool    fallback           = block_size > maxThreadsPerBlock;
   asmb->fallback             = fallback;
@@ -1106,13 +1095,15 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   } else {  // Use kernel with 2D threadblock
     asmb->block_size_x = esize;
     asmb->block_size_y = esize;
-  }
-  asmb->numemodein  = num_emode_in;
-  asmb->numemodeout = num_emode_out;
-  asmb->nqpts       = nqpts;
-  asmb->nnodes      = esize;
-  asmb->block_size  = block_size;
-  asmb->ncomp       = ncomp;
+  }*/
+  asmb->block_size_x = esize;
+  asmb->block_size_y = esize;
+  asmb->numemodein   = num_emode_in;
+  asmb->numemodeout  = num_emode_out;
+  asmb->nqpts        = nqpts;
+  asmb->nnodes       = esize;
+  asmb->block_size   = block_size;
+  asmb->ncomp        = ncomp;
 
   // Build 'full' B matrices (not 1D arrays used for tensor-product matrices
   const CeedScalar *interp_in, *grad_in;
@@ -1161,7 +1152,7 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
 }
 
 //------------------------------------------------------------------------------
-// Matrix assembly kernel for low-order elements (2D thread block)
+// Matrix assembly kernel for low-order elements (3D thread block)
 //------------------------------------------------------------------------------
 static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOperator_Sycl *impl, const CeedScalar *qf_array,
                                            CeedScalar *values_array) {
@@ -1190,47 +1181,35 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
   CeedScalar *B_in, *B_out;
   B_in                        = asmb->d_B_in;
   B_out                       = asmb->d_B_out;
-  const CeedInt elemsPerBlock = asmb->elemsPerBlock;
   const CeedInt block_size_x  = asmb->block_size_x;
   const CeedInt block_size_y  = asmb->block_size_y;
 
-  const CeedInt     grid = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
-  sycl::range<3>    local_range(block_size_x, block_size_y, elemsPerBlock);
-  sycl::range<3>    global_range(grid * block_size_x, block_size_y, elemsPerBlock);
-  sycl::nd_range<3> kernel_range(global_range, local_range);
+  sycl::range<3> kernel_range(nelem, block_size_y, block_size_x);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::nd_item<3> work_item) {
-    const CeedInt blockIdx  = work_item.get_group(0);
-    const CeedInt gridDimx  = work_item.get_group_range(0);
-    const CeedInt threadIdx = work_item.get_local_id(0);
-    const CeedInt threadIdy = work_item.get_local_id(1);
-    const CeedInt threadIdz = work_item.get_local_id(2);
-    const CeedInt blockDimz = work_item.get_local_range(2);
-
-    const int i = threadIdx;  // The output row index of each B^TDB operation
-    const int l = threadIdy;  // The output column index of each B^TDB operation
-                              // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
-    for (CeedInt e = blockIdx * blockDimz + threadIdz; e < nelem; e += gridDimx * blockDimz) {
-      for (CeedInt comp_in = 0; comp_in < ncomp; comp_in++) {
-        for (CeedInt comp_out = 0; comp_out < ncomp; comp_out++) {
-          CeedScalar result        = 0.0;
-          CeedInt    qf_index_comp = qcomp_in_stride * comp_in + qcomp_out_stride * comp_out + qe_stride * e;
-          for (CeedInt emode_in = 0; emode_in < numemodein; emode_in++) {
-            CeedInt b_in_index = emode_in * nqpts * nnodes;
-            for (CeedInt emode_out = 0; emode_out < numemodeout; emode_out++) {
-              CeedInt b_out_index = emode_out * nqpts * nnodes;
-              CeedInt qf_index    = qf_index_comp + qemode_out_stride * emode_out + qemode_in_stride * emode_in;
-              // Perform the B^T D B operation for this 'chunk' of D (the qf_array)
-              for (CeedInt j = 0; j < nqpts; j++) {
-                result += B_out[b_out_index + j * nnodes + i] * qf_array[qf_index + j] * B_in[b_in_index + j * nnodes + l];
-              }
-            }  // end of emode_out
-          }    // end of emode_in
-          CeedInt val_index       = comp_in_stride * comp_in + comp_out_stride * comp_out + e_stride * e + nnodes * i + l;
-          values_array[val_index] = result;
-        }  // end of out component
-      }    // end of in component
-    }      // end of element loop
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::id<3> idx) {
+    const int e = idx.get(0);  // Element index
+    const int l = idx.get(1);  // The output column index of each B^TDB operation
+    const int i = idx.get(2);  // The output row index of each B^TDB operation
+                               // such that we have (Bout^T)_ij D_jk Bin_kl = C_il
+    for (CeedInt comp_in = 0; comp_in < ncomp; comp_in++) {
+      for (CeedInt comp_out = 0; comp_out < ncomp; comp_out++) {
+        CeedScalar result        = 0.0;
+        CeedInt    qf_index_comp = qcomp_in_stride * comp_in + qcomp_out_stride * comp_out + qe_stride * e;
+        for (CeedInt emode_in = 0; emode_in < numemodein; emode_in++) {
+          CeedInt b_in_index = emode_in * nqpts * nnodes;
+          for (CeedInt emode_out = 0; emode_out < numemodeout; emode_out++) {
+            CeedInt b_out_index = emode_out * nqpts * nnodes;
+            CeedInt qf_index    = qf_index_comp + qemode_out_stride * emode_out + qemode_in_stride * emode_in;
+            // Perform the B^T D B operation for this 'chunk' of D (the qf_array)
+            for (CeedInt j = 0; j < nqpts; j++) {
+              result += B_out[b_out_index + j * nnodes + i] * qf_array[qf_index + j] * B_in[b_in_index + j * nnodes + l];
+            }
+          }  // end of emode_out
+        }    // end of emode_in
+        CeedInt val_index       = comp_in_stride * comp_in + comp_out_stride * comp_out + e_stride * e + nnodes * i + l;
+        values_array[val_index] = result;
+      }  // end of out component
+    }    // end of in component
   });
 
   return CEED_ERROR_SUCCESS;
@@ -1239,6 +1218,7 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
 //------------------------------------------------------------------------------
 // Fallback kernel for larger orders (1D thread block)
 //------------------------------------------------------------------------------
+/*
 static int CeedOperatorLinearAssembleFallback_Sycl(sycl::queue &sycl_queue, const CeedOperator_Sycl *impl, const CeedScalar *qf_array,
                                                    CeedScalar *values_array) {
   // This kernel assumes B_in and B_out have the same number of quadrature points and basis points.
@@ -1309,7 +1289,7 @@ static int CeedOperatorLinearAssembleFallback_Sycl(sycl::queue &sycl_queue, cons
     }        // end of element loop
   });
   return CEED_ERROR_SUCCESS;
-}
+}*/
 
 //------------------------------------------------------------------------------
 // Assemble matrix data for COO matrix of assembled operator.
@@ -1345,11 +1325,12 @@ static int CeedSingleOperatorAssemble_Sycl(CeedOperator op, CeedInt offset, Ceed
   CeedCallBackend(CeedVectorGetArrayRead(assembled_qf, CEED_MEM_DEVICE, &qf_array));
 
   // Compute B^T D B
-  if (impl->asmb->fallback) {
+  CeedCallBackend(CeedOperatorLinearAssemble_Sycl(sycl_data->sycl_queue, impl, qf_array, values_array));
+  /*if (impl->asmb->fallback) {
     CeedCallBackend(CeedOperatorLinearAssembleFallback_Sycl(sycl_data->sycl_queue, impl, qf_array, values_array));
   } else {
     CeedCallBackend(CeedOperatorLinearAssemble_Sycl(sycl_data->sycl_queue, impl, qf_array, values_array));
-  }
+  }*/
   // Wait for kernels to be completed
   sycl_data->sycl_queue.wait_and_throw();
 
