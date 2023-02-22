@@ -835,7 +835,7 @@ static int CeedOperatorLinearDiagonal_Sycl(sycl::queue &sycl_queue, const bool p
   const CeedEvalMode *emodein   = diag->d_emodein;
   const CeedEvalMode *emodeout  = diag->d_emodeout;
 
-  sycl::range<1> kernel_range(nelem*nnodes);
+  sycl::range<1> kernel_range(nelem * nnodes);
 
   sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::id<1> idx) {
     const CeedInt tid = idx % nnodes;
@@ -1081,10 +1081,10 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
   // Kernel setup
-  int elemsPerBlock          = 1;
-  asmb->elemsPerBlock        = elemsPerBlock;
-  CeedInt block_size         = esize * esize * elemsPerBlock; /*
-  CeedInt maxThreadsPerBlock = sycl_data->sycl_device.get_info<sycl::info::device::max_work_group_size>();
+  int elemsPerBlock   = 1;
+  asmb->elemsPerBlock = elemsPerBlock;
+  CeedInt block_size  = esize * esize * elemsPerBlock;
+  /* CeedInt maxThreadsPerBlock = sycl_data->sycl_device.get_info<sycl::info::device::max_work_group_size>();
   bool    fallback           = block_size > maxThreadsPerBlock;
   asmb->fallback             = fallback;
   if (fallback) {
@@ -1179,10 +1179,10 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
   const CeedInt qemode_in_stride  = qcomp_in_stride * ncomp;
 
   CeedScalar *B_in, *B_out;
-  B_in                        = asmb->d_B_in;
-  B_out                       = asmb->d_B_out;
-  const CeedInt block_size_x  = asmb->block_size_x;
-  const CeedInt block_size_y  = asmb->block_size_y;
+  B_in                       = asmb->d_B_in;
+  B_out                      = asmb->d_B_out;
+  const CeedInt block_size_x = asmb->block_size_x;
+  const CeedInt block_size_y = asmb->block_size_y;
 
   sycl::range<3> kernel_range(nelem, block_size_y, block_size_x);
 
