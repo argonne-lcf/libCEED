@@ -56,7 +56,7 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   CeedCallBackend(CeedQFunctionGetInnerContextData(qf, CEED_MEM_DEVICE, &context_data));
 
   // Launch as a basic parallel_for over Q quadrature points
-  ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+  sycl::event kernel_event = ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
     int iarg{};
     cgh.set_arg(iarg, context_data);
     ++iarg;
@@ -73,6 +73,8 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
     }
     cgh.parallel_for(Q, *(impl->QFunction));
   });
+  // Order queue
+  ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier({kernel_event});
 
   // Restore vectors
   U_i = U;

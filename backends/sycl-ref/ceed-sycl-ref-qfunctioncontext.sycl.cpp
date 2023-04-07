@@ -42,8 +42,11 @@ static inline int CeedQFunctionContextSyncH2D_Sycl(const CeedQFunctionContext ct
     impl->d_data = impl->d_data_owned;
   }
 
-  CeedCallSycl(ceed, sycl_data->sycl_queue.memcpy(impl->d_data, impl->h_data, ctxsize));
-  CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
+  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, impl->h_data, ctxsize);
+  // Order queue
+  sycl_data->sycl_queue.ext_oneapi_submit_barrier({copy_event});
+  
+  CeedCallSycl(ceed, copy_event.wait_and_throw());
 
   return CEED_ERROR_SUCCESS;
 }
@@ -77,8 +80,11 @@ static inline int CeedQFunctionContextSyncD2H_Sycl(const CeedQFunctionContext ct
     impl->h_data = impl->h_data_owned;
   }
 
-  CeedCallSycl(ceed, sycl_data->sycl_queue.memcpy(impl->h_data, impl->d_data, ctxsize));
-  CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
+  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->h_data, impl->d_data, ctxsize);
+  // Order queue
+  sycl_data->sycl_queue.ext_oneapi_submit_barrier({copy_event});
+  
+  CeedCallSycl(ceed, copy_event.wait_and_throw());
 
   return CEED_ERROR_SUCCESS;
 }
@@ -209,25 +215,27 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
   CeedCallSycl(ceed, sycl::free(impl->d_data_owned, sycl_data->sycl_context));
   impl->d_data_owned = NULL;
   switch (copy_mode) {
-    case CEED_COPY_VALUES:
+    case CEED_COPY_VALUES: {
       size_t ctxsize;
       CeedCallBackend(CeedQFunctionContextGetContextSize(ctx, &ctxsize));
       CeedCallSycl(ceed, impl->d_data_owned = sycl::malloc_device(ctxsize, sycl_data->sycl_device, sycl_data->sycl_context));
       impl->d_data_borrowed = NULL;
       impl->d_data          = impl->d_data_owned;
-      CeedCallSycl(ceed, sycl_data->sycl_queue.memcpy(impl->d_data, data, ctxsize));
-      CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
-      break;
-    case CEED_OWN_POINTER:
+      sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, data, ctxsize);
+      // Order queue
+      sycl_data->sycl_queue.ext_oneapi_submit_barrier({copy_event});
+      CeedCallSycl(ceed, copy_event.wait_and_throw());
+    } break;
+    case CEED_OWN_POINTER: {
       impl->d_data_owned    = data;
       impl->d_data_borrowed = NULL;
       impl->d_data          = data;
-      break;
-    case CEED_USE_POINTER:
+    } break;
+    case CEED_USE_POINTER: {
       impl->d_data_owned    = NULL;
       impl->d_data_borrowed = data;
       impl->d_data          = data;
-      break;
+    } break;
   }
 
   return CEED_ERROR_SUCCESS;
