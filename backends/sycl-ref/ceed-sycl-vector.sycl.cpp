@@ -493,38 +493,33 @@ static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *no
   const CeedScalar *d_array;
   CeedCallBackend(CeedVectorGetArrayRead(vec, CEED_MEM_DEVICE, &d_array));
 
-  if (!impl->reduction_norm) {
-    CeedCallSycl(ceed, impl->reduction_norm = sycl::malloc_device<CeedScalar>(1, data->sycl_device, data->sycl_context));
-  }
   switch (type) {
     case CEED_NORM_1: {
       auto sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>());
       sycl::event e  = data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += abs(d_array[i]); });
       // Order queue
       data->sycl_queue.ext_oneapi_submit_barrier({e});
+      CeedCallSycl(ceed, e.wait_and_throw());
     } break;
     case CEED_NORM_2: {
       auto sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>());
       sycl::event e = data->sycl_queue.parallel_for(length, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); });
       // Order queue
       data->sycl_queue.ext_oneapi_submit_barrier({e});
+      CeedCallSycl(ceed, e.wait_and_throw());
     } break;
     case CEED_NORM_MAX: {
       auto maxReduction = sycl::reduction(impl->reduction_norm, sycl::maximum<>());
       sycl::event e = data->sycl_queue.parallel_for(length, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(abs(d_array[i])); });
       // Order queue
       data->sycl_queue.ext_oneapi_submit_barrier({e});
+      CeedCallSycl(ceed, e.wait_and_throw());
     } break;
   }
-  // Copy from device to host
-  sycl::event copy_event = data->sycl_queue.copy<CeedScalar>(impl->reduction_norm, norm, 1);
-  // Order queue
-  data->sycl_queue.ext_oneapi_submit_barrier({copy_event});
-  // Wait for copy to finish and handle exceptions
-  CeedCallSycl(ceed, copy_event.wait_and_throw());
   // L2 norm - square root over reduced value
-  if (type == CEED_NORM_2) *norm = sqrt(*norm);
-
+  if (type == CEED_NORM_2) *norm = sqrt(*impl->reduction_norm);
+  else *norm = *impl->reduction_norm;
+  
   CeedCallBackend(CeedVectorRestoreArrayRead(vec, &d_array));
 
   return CEED_ERROR_SUCCESS;
@@ -735,7 +730,12 @@ int CeedVectorCreate_Sycl(CeedSize n, CeedVector vec) {
   CeedVector_Sycl *impl;
   Ceed             ceed;
   CeedCallBackend(CeedVectorGetCeed(vec, &ceed));
+  Ceed_Sycl *data;
+  CeedCallBackend(CeedGetData(ceed, &data));
 
+  CeedCallBackend(CeedCalloc(1, &impl));
+  CeedCallSycl(ceed, impl->reduction_norm = sycl::malloc_host<CeedScalar>(1, data->sycl_context));
+  
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Vector", vec, "HasValidArray", CeedVectorHasValidArray_Sycl));
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Vector", vec, "HasBorrowedArrayOfType", CeedVectorHasBorrowedArrayOfType_Sycl));
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Vector", vec, "SetArray", CeedVectorSetArray_Sycl));
@@ -752,7 +752,6 @@ int CeedVectorCreate_Sycl(CeedSize n, CeedVector vec) {
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Vector", vec, "PointwiseMult", CeedVectorPointwiseMult_Sycl));
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Vector", vec, "Destroy", CeedVectorDestroy_Sycl));
 
-  CeedCallBackend(CeedCalloc(1, &impl));
   CeedCallBackend(CeedVectorSetData(vec, impl));
 
   return CEED_ERROR_SUCCESS;
