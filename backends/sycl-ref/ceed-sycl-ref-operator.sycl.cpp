@@ -851,7 +851,10 @@ static int CeedOperatorLinearDiagonal_Sycl(sycl::queue &sycl_queue, const bool p
 
   sycl::range<1> kernel_range(nelem * nnodes);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, [=](sycl::id<1> idx) {
+  // Order queue
+  sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
+  sycl_queue.parallel_for<CeedOperatorSyclLinearDiagonal>(kernel_range, {e},
+  [=](sycl::id<1> idx) {
     const CeedInt tid = idx % nnodes;
     const CeedInt e   = idx / nnodes;
 
@@ -1130,14 +1133,14 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   for (int i = 0; i < num_B_in_mats_to_load; i++) {
     CeedEvalMode eval_mode = eval_mode_in[i];
     if (eval_mode == CEED_EVAL_INTERP) {
-      sycl::event e = sycl_data->sycl_queue.copy<CeedScalar>(interp_in, &asmb->d_B_in[mat_start], esize * nqpts);
       // Order queue
-      sycl_data->sycl_queue.ext_oneapi_submit_barrier({e});
+      sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+      sycl_data->sycl_queue.copy<CeedScalar>(interp_in, &asmb->d_B_in[mat_start], esize * nqpts, {e});
       mat_start += esize * nqpts;
     } else if (eval_mode == CEED_EVAL_GRAD) {
-      sycl::event e = sycl_data->sycl_queue.copy<CeedScalar>(grad_in, &asmb->d_B_in[mat_start], dim * esize * nqpts);
       // Order queue
-      sycl_data->sycl_queue.ext_oneapi_submit_barrier({e});
+      sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+      sycl_data->sycl_queue.copy<CeedScalar>(grad_in, &asmb->d_B_in[mat_start], dim * esize * nqpts, {e});
       mat_start += dim * esize * nqpts;
     }
   }
@@ -1159,14 +1162,14 @@ static int CeedSingleOperatorAssembleSetup_Sycl(CeedOperator op) {
   for (int i = 0; i < num_B_out_mats_to_load; i++) {
     CeedEvalMode eval_mode = eval_mode_out[i];
     if (eval_mode == CEED_EVAL_INTERP) {
-      sycl::event e = sycl_data->sycl_queue.copy<CeedScalar>(interp_out, &asmb->d_B_out[mat_start], esize * nqpts);
       // Order queue
-      sycl_data->sycl_queue.ext_oneapi_submit_barrier({e});
+      sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+      sycl_data->sycl_queue.copy<CeedScalar>(interp_out, &asmb->d_B_out[mat_start], esize * nqpts,{e});
       mat_start += esize * nqpts;
     } else if (eval_mode == CEED_EVAL_GRAD) {
-      sycl::event e = sycl_data->sycl_queue.copy<CeedScalar>(grad_out, &asmb->d_B_out[mat_start], dim * esize * nqpts);
       // Order queue
-      sycl_data->sycl_queue.ext_oneapi_submit_barrier({e});
+      sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+      sycl_data->sycl_queue.copy<CeedScalar>(grad_out, &asmb->d_B_out[mat_start], dim * esize * nqpts,{e});
       mat_start += dim * esize * nqpts;
     }
   }
@@ -1208,7 +1211,10 @@ static int CeedOperatorLinearAssemble_Sycl(sycl::queue &sycl_queue, const CeedOp
 
   sycl::range<3> kernel_range(nelem, block_size_y, block_size_x);
 
-  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, [=](sycl::id<3> idx) {
+  // Order queue
+  sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
+  sycl_queue.parallel_for<CeedOperatorSyclLinearAssemble>(kernel_range, {e},
+  [=](sycl::id<3> idx) {
     const int e = idx.get(0);  // Element index
     const int l = idx.get(1);  // The output column index of each B^TDB operation
     const int i = idx.get(2);  // The output row index of each B^TDB operation
