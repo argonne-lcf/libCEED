@@ -42,7 +42,7 @@ static inline int CeedQFunctionContextSyncH2D_Sycl(const CeedQFunctionContext ct
     impl->d_data = impl->d_data_owned;
   }
   // Order queue
-  sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+  sycl::event e          = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
   sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, impl->h_data, ctxsize, {e});
   CeedCallSycl(ceed, copy_event.wait_and_throw());
 
@@ -79,7 +79,7 @@ static inline int CeedQFunctionContextSyncD2H_Sycl(const CeedQFunctionContext ct
   }
 
   // Order queue
-  sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+  sycl::event e          = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
   sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->h_data, impl->d_data, ctxsize, {e});
   CeedCallSycl(ceed, copy_event.wait_and_throw());
 
@@ -209,9 +209,9 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
 
   // Order queue
   sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
-  
+
   // Wait for all work to finish before freeing memory
-  if(impl->d_data_owned) {
+  if (impl->d_data_owned) {
     CeedCallSycl(ceed, sycl_data->sycl_queue.wait_and_throw());
     CeedCallSycl(ceed, sycl::free(impl->d_data_owned, sycl_data->sycl_context));
     impl->d_data_owned = NULL;
@@ -222,8 +222,8 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
       size_t ctxsize;
       CeedCallBackend(CeedQFunctionContextGetContextSize(ctx, &ctxsize));
       CeedCallSycl(ceed, impl->d_data_owned = sycl::malloc_device(ctxsize, sycl_data->sycl_device, sycl_data->sycl_context));
-      impl->d_data_borrowed = NULL;
-      impl->d_data          = impl->d_data_owned;
+      impl->d_data_borrowed  = NULL;
+      impl->d_data           = impl->d_data_owned;
       sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, data, ctxsize, {e});
       CeedCallSycl(ceed, copy_event.wait_and_throw());
     } break;

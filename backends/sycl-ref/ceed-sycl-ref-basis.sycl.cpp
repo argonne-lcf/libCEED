@@ -217,8 +217,7 @@ static int CeedBasisApplyWeight_Sycl(sycl::queue &sycl_queue, CeedInt num_elem, 
 
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
-  sycl_queue.parallel_for<CeedBasisSyclWeight>(kernel_range, {e}, 
-  [=](sycl::item<3> work_item) {
+  sycl_queue.parallel_for<CeedBasisSyclWeight>(kernel_range, {e}, [=](sycl::item<3> work_item) {
     if (dim == 1) w[work_item.get_linear_id()] = q_weight_1d[work_item[2]];
     if (dim == 2) w[work_item.get_linear_id()] = q_weight_1d[work_item[2]] * q_weight_1d[work_item[1]];
     if (dim == 3) w[work_item.get_linear_id()] = q_weight_1d[work_item[2]] * q_weight_1d[work_item[1]] * q_weight_1d[work_item[0] % Q_1d];
@@ -309,8 +308,7 @@ static int CeedBasisApplyNonTensorInterp_Sycl(sycl::queue &sycl_queue, CeedInt n
 
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
-  sycl_queue.parallel_for<CeedBasisSyclInterpNT>(kernel_range, {e},
-  [=](sycl::id<2> indx) {
+  sycl_queue.parallel_for<CeedBasisSyclInterpNT>(kernel_range, {e}, [=](sycl::id<2> indx) {
     const CeedInt i    = indx[1];
     const CeedInt elem = indx[0];
 
@@ -354,8 +352,7 @@ static int CeedBasisApplyNonTensorGrad_Sycl(sycl::queue &sycl_queue, CeedInt num
 
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
-  sycl_queue.parallel_for<CeedBasisSyclGradNT>(kernel_range, {e},
-  [=](sycl::id<2> indx) {
+  sycl_queue.parallel_for<CeedBasisSyclGradNT>(kernel_range, {e}, [=](sycl::id<2> indx) {
     const CeedInt i    = indx[1];
     const CeedInt elem = indx[0];
 
@@ -393,8 +390,7 @@ static int CeedBasisApplyNonTensorWeight_Sycl(sycl::queue &sycl_queue, CeedInt n
 
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
-  sycl_queue.parallel_for<CeedBasisSyclWeightNT>(kernel_range, {e},
-  [=](sycl::id<2> indx) {
+  sycl_queue.parallel_for<CeedBasisSyclWeightNT>(kernel_range, {e}, [=](sycl::id<2> indx) {
     const CeedInt i          = indx[1];
     const CeedInt elem       = indx[0];
     d_V[i + elem * num_qpts] = q_weight[i];
