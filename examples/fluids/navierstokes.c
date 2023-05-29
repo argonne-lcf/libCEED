@@ -42,6 +42,12 @@ const char help[] = "Solve Navier-Stokes using PETSc and libCEED\n";
 #include "navierstokes.h"
 #include <ceed/sycl.h>
 #include <petscdevice.h>
+#include <ceed.h>
+#include <petscdmplex.h>
+#include <petscts.h>
+
+int CeedSetStream_Sycl(Ceed ceed, void* handle) __attribute__((weak));
+
 
 int main(int argc, char **argv) {
   // ---------------------------------------------------------------------------
