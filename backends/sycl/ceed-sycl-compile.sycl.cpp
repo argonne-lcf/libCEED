@@ -23,7 +23,7 @@
 using ByteVector_t = std::vector<unsigned char>;
 
 //------------------------------------------------------------------------------
-//
+// Add defined constants at the beginning of kernel source
 //------------------------------------------------------------------------------
 static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_source, std::string &jit_source,
                                       const std::map<std::string, CeedInt> &constants = {}) {
@@ -80,8 +80,6 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
 
 // ------------------------------------------------------------------------------
 // Load (compile) SPIR-V source and wrap in sycl kernel_bundle
-// TODO: determine appropriate flags
-// TODO: Error handle lz calls
 // ------------------------------------------------------------------------------
 static int CeedJitLoadModule_Sycl(Ceed ceed,
                                   const sycl::context &sycl_context, 
@@ -96,7 +94,7 @@ static int CeedJitLoadModule_Sycl(Ceed ceed,
                                   ZE_MODULE_FORMAT_IL_SPIRV,
                                   il_binary.size(),
                                   il_binary.data(),
-                                  " -ze-opt-large-register-file",   // flags
+                                  " -g -ze-opt-large-register-file",
                                   nullptr}; // specialization constants
 
   ze_module_handle_t lz_module;
@@ -111,7 +109,7 @@ static int CeedJitLoadModule_Sycl(Ceed ceed,
     CeedCall(CeedCalloc(log_size, &log_message));
     zeModuleBuildLogGetString(lz_log, &log_size, log_message);
 
-    return CeedError((ceed), CEED_ERROR_BACKEND, "Failed to compile Level Zero module:\n%s",log_message);
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Failed to compile Level Zero module:\n%s",log_message);
   }
 
   // sycl make_<type> only throws errors for backend mismatch--assume we have vetted this already
@@ -145,8 +143,6 @@ int CeedJitBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclMod
 
 // ------------------------------------------------------------------------------
 // Get a sycl kernel from an existing kernel_bundle
-//
-// TODO: Error handle lz calls
 // ------------------------------------------------------------------------------
 int CeedJitGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module, 
                           const std::string &kernel_name, 
@@ -160,7 +156,11 @@ int CeedJitGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module,
 
   ze_kernel_desc_t   lz_kernel_desc = {ZE_STRUCTURE_TYPE_KERNEL_DESC, nullptr, 0, kernel_name.c_str()};
   ze_kernel_handle_t lz_kernel;
-  zeKernelCreate(lz_module, &lz_kernel_desc, &lz_kernel);
+  ze_result_t lz_err = zeKernelCreate(lz_module, &lz_kernel_desc, &lz_kernel);
+
+  if (ZE_RESULT_SUCCESS != lz_err) {
+    return CeedError(ceed,CEED_ERROR_BACKEND,"Failed to retrieve kernel from Level Zero module");
+  }
 
   *sycl_kernel = new sycl::kernel(sycl::make_kernel<sycl::backend::ext_oneapi_level_zero>(
       {*sycl_module, lz_kernel, sycl::ext::oneapi::level_zero::ownership::transfer}, data->sycl_context));
