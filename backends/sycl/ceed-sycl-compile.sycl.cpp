@@ -94,7 +94,7 @@ static int CeedJitLoadModule_Sycl(Ceed ceed,
                                   ZE_MODULE_FORMAT_IL_SPIRV,
                                   il_binary.size(),
                                   il_binary.data(),
-                                  " -g -ze-opt-large-register-file",
+                                  " -ze-opt-large-register-file",
                                   nullptr}; // specialization constants
 
   ze_module_handle_t lz_module;
