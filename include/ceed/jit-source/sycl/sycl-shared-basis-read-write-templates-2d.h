@@ -29,7 +29,7 @@ inline void loadMatrix(const CeedInt N, const CeedScalar * restrict d_B, CeedSca
 //------------------------------------------------------------------------------
 // E-vector -> single element
 //------------------------------------------------------------------------------
-inline void ReadElementStrided2d(const CeedInt NUM_COMP, const CeedInt P_1D,
+inline void ReadElementStrided2d(const CeedInt comp, const CeedInt P_1D,
   const CeedInt num_elem, const CeedInt strides_node, const CeedInt strides_comp, const CeedInt strides_elem, 
   global const CeedScalar * restrict d_u, private CeedScalar * restrict r_u) {
   
@@ -40,16 +40,14 @@ inline void ReadElementStrided2d(const CeedInt NUM_COMP, const CeedInt P_1D,
   if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
     const CeedInt node = item_id_x + item_id_y * P_1D;
     const CeedInt ind  = node * strides_node + elem * strides_elem;
-    for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-      r_u[comp] = d_u[ind + comp * strides_comp];
-    }
+    r_u[0] = d_u[ind + comp * strides_comp];
   }
 }
 
 //------------------------------------------------------------------------------
 // Single element -> E-vector
 //------------------------------------------------------------------------------
-inline void WriteElementStrided2d(const CeedInt NUM_COMP, const CeedInt P_1D,
+inline void WriteElementStrided2d(const CeedInt comp, const CeedInt P_1D,
   const CeedInt num_elem, const CeedInt strides_node, const CeedInt strides_comp, const CeedInt strides_elem, 
   private const CeedScalar * restrict r_v, global CeedScalar * restrict d_v) {
 
@@ -60,9 +58,7 @@ inline void WriteElementStrided2d(const CeedInt NUM_COMP, const CeedInt P_1D,
   if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
     const CeedInt node = item_id_x + item_id_y * P_1D;
     const CeedInt ind  = node * strides_node + elem * strides_elem;
-    for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-      d_v[ind + comp * strides_comp] = r_v[comp];
-    }
+    d_v[ind + comp * strides_comp] = r_v[0];
   }
 }
 

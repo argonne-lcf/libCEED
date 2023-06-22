@@ -29,7 +29,7 @@ inline void loadMatrix(const CeedInt N, const CeedScalar * restrict d_B, CeedSca
 //------------------------------------------------------------------------------
 // E-vector -> single element
 //------------------------------------------------------------------------------
-inline void ReadElementStrided3d(const CeedInt NUM_COMP, const CeedInt P_1D,
+inline void ReadElementStrided3d(const CeedInt comp, const CeedInt P_1D,
   const CeedInt num_elem, const CeedInt strides_node, const CeedInt strides_comp, const CeedInt strides_elem, 
   global const CeedScalar * restrict d_u, private CeedScalar * restrict r_u) {
   
@@ -38,12 +38,11 @@ inline void ReadElementStrided3d(const CeedInt NUM_COMP, const CeedInt P_1D,
   const CeedInt elem = get_global_id(2);
 
   if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
+  // if (item_id_x < P_1D && item_id_y < P_1D) {
     for (CeedInt z = 0; z < P_1D; z++) {
       const CeedInt node =  item_id_x + item_id_y * P_1D + z * P_1D * P_1D;
       const CeedInt ind  = node * strides_node + elem * strides_elem;
-      for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-        r_u[z + comp * P_1D] = d_u[ind + comp * strides_comp];
-      }
+      r_u[z] = d_u[ind + comp * strides_comp];
     }
   }
 }
@@ -51,7 +50,7 @@ inline void ReadElementStrided3d(const CeedInt NUM_COMP, const CeedInt P_1D,
 //------------------------------------------------------------------------------
 // Single element -> E-vector
 //------------------------------------------------------------------------------
-inline void WriteElementStrided3d(const CeedInt NUM_COMP, const CeedInt P_1D,
+inline void WriteElementStrided3d(const CeedInt comp, const CeedInt P_1D,
   const CeedInt num_elem, const CeedInt strides_node, const CeedInt strides_comp, const CeedInt strides_elem, 
   private const CeedScalar * restrict r_v, global CeedScalar * restrict d_v) {
 
@@ -60,16 +59,13 @@ inline void WriteElementStrided3d(const CeedInt NUM_COMP, const CeedInt P_1D,
   const CeedInt elem = get_global_id(2);
 
   if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
+  // if (item_id_x < P_1D && item_id_y < P_1D) {
     for (CeedInt z = 0; z < P_1D; z++) {
       const CeedInt node =  item_id_x + item_id_y * P_1D + z * P_1D * P_1D;
       const CeedInt ind  = node * strides_node + elem * strides_elem;
-      for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-        d_v[ind + comp * strides_comp] = r_v[z + comp * P_1D];
-      }
+      d_v[ind + comp * strides_comp] = r_v[z];
     }
   }
 }
-
-//------------------------------------------------------------------------------
 
 #endif

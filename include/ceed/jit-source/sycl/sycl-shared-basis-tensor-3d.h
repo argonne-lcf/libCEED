@@ -29,30 +29,30 @@ kernel void Interp(const CeedInt num_elem,
   global CeedScalar * restrict d_V) {
 
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D];
-  private CeedScalar r_U[BASIS_NUM_COMP * BASIS_P_1D];
-  private CeedScalar r_V[BASIS_NUM_COMP * BASIS_Q_1D];
+  private CeedScalar r_U[BASIS_P_1D];
+  private CeedScalar r_V[BASIS_Q_1D];
   
   local CeedScalar scratch[BASIS_INTERP_SCRATCH_SIZE];
   local CeedScalar * elem_scratch  = scratch + get_local_id(2) * T_1D * T_1D;
 
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
-
-  ReadElementStrided3d(BASIS_NUM_COMP, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U,r_U);
-  InterpTensor3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, r_V, elem_scratch);
-  WriteElementStrided3d(BASIS_NUM_COMP, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V,d_V);
+  
+  for (CeedInt comp = 0; comp < BASIS_NUM_COMP; comp++) {
+    ReadElementStrided3d(comp, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U,r_U);
+    InterpTensor3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, r_V, elem_scratch);
+    WriteElementStrided3d(comp, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V,d_V);
+  }
 }
 
 kernel void InterpTranspose(const CeedInt num_elem, 
   global const CeedScalar * restrict d_interp_1d, 
   global const CeedScalar * restrict d_U,
   global CeedScalar * restrict d_V) {
-  // local size: 
-  // 1d: elems_per_block * T_1d
-  // 2d,3d: elems_per_block * T_1d * T_1d 
+
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D];
-  private CeedScalar r_U[BASIS_NUM_COMP * BASIS_Q_1D];
-  private CeedScalar r_V[BASIS_NUM_COMP * BASIS_P_1D];
+  private CeedScalar r_U[BASIS_Q_1D];
+  private CeedScalar r_V[BASIS_P_1D];
   
   local CeedScalar scratch[BASIS_INTERP_SCRATCH_SIZE];
   local CeedScalar * elem_scratch  = scratch + get_local_id(2) * T_1D * T_1D;
@@ -60,9 +60,11 @@ kernel void InterpTranspose(const CeedInt num_elem,
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-  ReadElementStrided3d(BASIS_NUM_COMP, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, d_U, r_U);
-  InterpTransposeTensor3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, r_V, elem_scratch);
-  WriteElementStrided3d(BASIS_NUM_COMP, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, r_V, d_V);
+  for (CeedInt comp = 0; comp < BASIS_NUM_COMP; comp++) {
+    ReadElementStrided3d(comp, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, d_U, r_U);
+    InterpTransposeTensor3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, r_V, elem_scratch);
+    WriteElementStrided3d(comp, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, r_V, d_V);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -77,8 +79,8 @@ kernel void Grad(const CeedInt num_elem,
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D];
   local CeedScalar s_G[BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D)];
   
-  private CeedScalar r_U[BASIS_NUM_COMP * BASIS_P_1D];
-  private CeedScalar r_V[BASIS_NUM_COMP * 3 * BASIS_Q_1D];
+  private CeedScalar r_U[BASIS_P_1D];
+  private CeedScalar r_V[3 * BASIS_Q_1D];
   
   local CeedScalar scratch[BASIS_GRAD_SCRATCH_SIZE];
   local CeedScalar * elem_scratch  = scratch + get_local_id(2) * T_1D * T_1D;
@@ -87,10 +89,16 @@ kernel void Grad(const CeedInt num_elem,
   loadMatrix(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), d_grad_1d, s_G);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-  ReadElementStrided3d(BASIS_NUM_COMP, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
-  if (BASIS_HAS_COLLOCATED_GRAD) GradTensorCollocated3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
-  else GradTensor3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
-  WriteElementStrided3d(BASIS_NUM_COMP * 3, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V, d_V);
+  for (CeedInt comp = 0; comp < BASIS_NUM_COMP; comp++) {
+    ReadElementStrided3d(comp, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
+    
+    if (BASIS_HAS_COLLOCATED_GRAD) GradTensorCollocated3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
+    else GradTensor3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
+    
+    for (CeedInt dim = 0; dim < 3; ++dim) {
+      WriteElementStrided3d(comp + BASIS_NUM_COMP * dim, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V + BASIS_Q_1D * dim, d_V);
+    }
+  }
 }
 
 kernel void GradTranspose(const CeedInt num_elem, 
@@ -102,8 +110,8 @@ kernel void GradTranspose(const CeedInt num_elem,
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D]; // Todo, don't allocate s_B for dimension 1
   local CeedScalar s_G[BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D)];
   
-  private CeedScalar r_U[BASIS_NUM_COMP * 3 * BASIS_Q_1D];
-  private CeedScalar r_V[BASIS_NUM_COMP * BASIS_P_1D];
+  private CeedScalar r_U[3 * BASIS_Q_1D];
+  private CeedScalar r_V[BASIS_P_1D];
   
   local CeedScalar scratch[BASIS_GRAD_SCRATCH_SIZE];
   local CeedScalar * elem_scratch  = scratch + get_local_id(2) * T_1D * T_1D;
@@ -112,10 +120,16 @@ kernel void GradTranspose(const CeedInt num_elem,
   loadMatrix(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), d_grad_1d, s_G);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
 
-  ReadElementStrided3d(BASIS_NUM_COMP * 3, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, d_U, r_U);
-  if (BASIS_HAS_COLLOCATED_GRAD) GradTransposeTensorCollocated3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
-  else GradTransposeTensor3d(BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
-  WriteElementStrided3d(BASIS_NUM_COMP, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, r_V, d_V);
+  for (CeedInt comp = 0; comp < BASIS_NUM_COMP; comp++) {
+    for (CeedInt dim = 0; dim < 3; ++dim) {
+      ReadElementStrided3d(comp + BASIS_NUM_COMP * dim, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, d_U, r_U + BASIS_Q_1D * dim);
+    }
+
+    if (BASIS_HAS_COLLOCATED_GRAD) GradTransposeTensorCollocated3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
+    else GradTransposeTensor3d(BASIS_P_1D, BASIS_Q_1D, r_U, s_B, s_G, r_V, elem_scratch);
+    
+    WriteElementStrided3d(comp, BASIS_P_1D, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, r_V, d_V);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -126,7 +140,7 @@ kernel void Weight(const CeedInt num_elem, global const CeedScalar * restrict q_
   private CeedScalar r_W[BASIS_Q_1D];
   // void prefetch(q_weight_1d,BASIS_Q_1D);
   WeightTensor3d(BASIS_Q_1D, q_weight_1d, r_W);
-  WriteElementStrided3d(1, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_W, d_W);
+  WriteElementStrided3d(0, BASIS_Q_1D, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_W, d_W);
 }
 
 //------------------------------------------------------------------------------

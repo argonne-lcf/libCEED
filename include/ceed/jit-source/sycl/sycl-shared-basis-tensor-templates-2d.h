@@ -138,7 +138,7 @@ inline void ContractTransposeAddX2d(const CeedInt P_1D, const CeedInt Q_1D,
 //------------------------------------------------------------------------------
 // 2D interpolate to quadrature points
 //------------------------------------------------------------------------------
-inline void InterpTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void InterpTensor2d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B,
   private CeedScalar * restrict r_V,
@@ -146,16 +146,14 @@ inline void InterpTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const Cee
 
   CeedScalar r_t[1];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractX2d(P_1D, Q_1D, r_U + comp, s_B, r_t, scratch);
-    ContractY2d(P_1D, Q_1D, r_t, s_B, r_V + comp, scratch);
-  }
+  ContractX2d(P_1D, Q_1D, r_U, s_B, r_t, scratch);
+  ContractY2d(P_1D, Q_1D, r_t, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------
 // 2D interpolate transpose
 //------------------------------------------------------------------------------
-inline void InterpTransposeTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void InterpTransposeTensor2d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B,
   private CeedScalar * restrict r_V,
@@ -163,16 +161,14 @@ inline void InterpTransposeTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, 
 
   CeedScalar r_t[1];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractTransposeY2d(P_1D, Q_1D, r_U + comp, s_B, r_t, scratch);
-    ContractTransposeX2d(P_1D, Q_1D, r_t, s_B, r_V + comp, scratch);
-  }
+  ContractTransposeY2d(P_1D, Q_1D, r_U, s_B, r_t, scratch);
+  ContractTransposeX2d(P_1D, Q_1D, r_t, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------
 // 2D derivatives at quadrature points
 //------------------------------------------------------------------------------
-inline void GradTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void GradTensor2d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar *restrict r_U, 
   local const CeedScalar * restrict s_B, 
   local const CeedScalar * restrict s_G,
@@ -181,18 +177,17 @@ inline void GradTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedI
 
   CeedScalar r_t[1];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractX2d(P_1D, Q_1D, r_U + comp, s_G, r_t, scratch);
-    ContractY2d(P_1D, Q_1D, r_t, s_B, r_V + comp + 0 * NUM_COMP, scratch);
-    ContractX2d(P_1D, Q_1D, r_U + comp, s_B, r_t, scratch);
-    ContractY2d(P_1D, Q_1D, r_t, s_G, r_V + comp + 1 * NUM_COMP, scratch);
-  }
+  ContractX2d(P_1D, Q_1D, r_U, s_G, r_t, scratch);
+  ContractY2d(P_1D, Q_1D, r_t, s_B, r_V, scratch);
+
+  ContractX2d(P_1D, Q_1D, r_U, s_B, r_t, scratch);
+  ContractY2d(P_1D, Q_1D, r_t, s_G, r_V + 1, scratch);
 }
 
 //------------------------------------------------------------------------------
 // 2D derivatives transpose
 //------------------------------------------------------------------------------
-inline void GradTransposeTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void GradTransposeTensor2d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B, 
   local const CeedScalar * restrict s_G,
@@ -201,12 +196,11 @@ inline void GradTransposeTensor2d(const CeedInt NUM_COMP, const CeedInt P_1D, co
 
   CeedScalar r_t[1];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractTransposeY2d(P_1D, Q_1D, r_U + comp + 0 * NUM_COMP, s_B, r_t, scratch);
-    ContractTransposeX2d(P_1D, Q_1D, r_t, s_G, r_V + comp, scratch);
-    ContractTransposeY2d(P_1D, Q_1D, r_U + comp + 1 * NUM_COMP, s_G, r_t, scratch);
-    ContractTransposeAddX2d(P_1D, Q_1D, r_t, s_B, r_V + comp, scratch);
-  }
+  ContractTransposeY2d(P_1D, Q_1D, r_U, s_B, r_t, scratch);
+  ContractTransposeX2d(P_1D, Q_1D, r_t, s_G, r_V, scratch);
+
+  ContractTransposeY2d(P_1D, Q_1D, r_U + 1, s_G, r_t, scratch);
+  ContractTransposeAddX2d(P_1D, Q_1D, r_t, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------

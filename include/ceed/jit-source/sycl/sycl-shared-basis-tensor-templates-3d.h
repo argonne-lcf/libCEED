@@ -245,7 +245,7 @@ inline void ContractTransposeAddX3d(const CeedInt P_1D, const CeedInt Q_1D,
 //------------------------------------------------------------------------------
 // 3D interpolate to quadrature points
 //------------------------------------------------------------------------------
-inline void InterpTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void InterpTensor3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B,
   private CeedScalar * restrict r_V,
@@ -254,17 +254,15 @@ inline void InterpTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const Cee
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractX3d(P_1D, Q_1D, r_U + comp * P_1D, s_B, r_t1, scratch);
-    ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * Q_1D, scratch);
-  }
+  ContractX3d(P_1D, Q_1D, r_U, s_B, r_t1, scratch);
+  ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------
 // 3D interpolate transpose
 //------------------------------------------------------------------------------
-inline void InterpTransposeTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void InterpTransposeTensor3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B,
   private CeedScalar * restrict r_V,
@@ -273,17 +271,15 @@ inline void InterpTransposeTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, 
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractTransposeZ3d(P_1D, Q_1D, r_U + comp * Q_1D, s_B, r_t1, scratch);
-    ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractTransposeX3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * P_1D, scratch);
-  }
+  ContractTransposeZ3d(P_1D, Q_1D, r_U, s_B, r_t1, scratch);
+  ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractTransposeX3d(P_1D, Q_1D, r_t2, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------
 // 3D derivatives at quadrature points
 //------------------------------------------------------------------------------
-inline void GradTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+inline void GradTensor3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B, 
   local const CeedScalar * restrict s_G,
@@ -293,23 +289,23 @@ inline void GradTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedI
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractX3d(P_1D, Q_1D, r_U + comp * P_1D, s_G, r_t1, scratch);
-    ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * Q_1D + 0 * NUM_COMP * Q_1D, scratch);
-    ContractX3d(P_1D, Q_1D, r_U + comp * P_1D, s_B, r_t1, scratch);
-    ContractY3d(P_1D, Q_1D, r_t1, s_G, r_t2, scratch);
-    ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * Q_1D + 1 * NUM_COMP * Q_1D, scratch);
-    ContractX3d(P_1D, Q_1D, r_U + comp * P_1D, s_B, r_t1, scratch);
-    ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractZ3d(P_1D, Q_1D, r_t2, s_G, r_V + comp * Q_1D + 2 * NUM_COMP * Q_1D, scratch);
-  }
+  ContractX3d(P_1D, Q_1D, r_U, s_G, r_t1, scratch);
+  ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V + 0 * Q_1D, scratch);
+
+  ContractX3d(P_1D, Q_1D, r_U, s_B, r_t1, scratch);
+  ContractY3d(P_1D, Q_1D, r_t1, s_G, r_t2, scratch);
+  ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_V + 1 * Q_1D, scratch);
+
+  ContractX3d(P_1D, Q_1D, r_U, s_B, r_t1, scratch);
+  ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractZ3d(P_1D, Q_1D, r_t2, s_G, r_V + 2 * Q_1D, scratch);
 }
 
-//------------------------------------------------------------------------------
-// 3D derivatives transpose
-//------------------------------------------------------------------------------
-inline void GradTransposeTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+// //------------------------------------------------------------------------------
+// // 3D derivatives transpose
+// //------------------------------------------------------------------------------
+inline void GradTransposeTensor3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B, 
   local const CeedScalar * restrict s_G,
@@ -319,23 +315,23 @@ inline void GradTransposeTensor3d(const CeedInt NUM_COMP, const CeedInt P_1D, co
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractTransposeZ3d(P_1D, Q_1D, r_U + comp * Q_1D + 0 * NUM_COMP * Q_1D, s_B, r_t1, scratch);
-    ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractTransposeX3d(P_1D, Q_1D, r_t2, s_G, r_V + comp * P_1D, scratch);
-    ContractTransposeZ3d(P_1D, Q_1D, r_U + comp * Q_1D + 1 * NUM_COMP * Q_1D, s_B, r_t1, scratch);
-    ContractTransposeY3d(P_1D, Q_1D, r_t1, s_G, r_t2, scratch);
-    ContractTransposeAddX3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * P_1D, scratch);
-    ContractTransposeZ3d(P_1D, Q_1D, r_U + comp * Q_1D + 2 * NUM_COMP * Q_1D, s_G, r_t1, scratch);
-    ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractTransposeAddX3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * P_1D, scratch);
-  }
+  ContractTransposeZ3d(P_1D, Q_1D, r_U + 0 * Q_1D, s_B, r_t1, scratch);
+  ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractTransposeX3d(P_1D, Q_1D, r_t2, s_G, r_V, scratch);
+
+  ContractTransposeZ3d(P_1D, Q_1D, r_U + 1 * Q_1D, s_B, r_t1, scratch);
+  ContractTransposeY3d(P_1D, Q_1D, r_t1, s_G, r_t2, scratch);
+  ContractTransposeAddX3d(P_1D, Q_1D, r_t2, s_B, r_V, scratch);
+  
+  ContractTransposeZ3d(P_1D, Q_1D, r_U + 2 * Q_1D, s_G, r_t1, scratch);
+  ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractTransposeAddX3d(P_1D, Q_1D, r_t2, s_B, r_V, scratch);
 }
 
-//------------------------------------------------------------------------------
-// 3D derivatives at quadrature points
-//------------------------------------------------------------------------------
-inline void GradTensorCollocated3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+// //------------------------------------------------------------------------------
+// // 3D derivatives at quadrature points
+// //------------------------------------------------------------------------------
+inline void GradTensorCollocated3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B, 
   local const CeedScalar * restrict s_G,
@@ -345,20 +341,18 @@ inline void GradTensorCollocated3d(const CeedInt NUM_COMP, const CeedInt P_1D, c
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
   
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractX3d(P_1D, Q_1D, r_U + comp * P_1D, s_B, r_t1, scratch);
-    ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_t1, scratch);
-    ContractX3d(Q_1D, Q_1D, r_t1, s_G, r_V + comp * Q_1D + 0 * NUM_COMP * Q_1D, scratch);
-    ContractY3d(Q_1D, Q_1D, r_t1, s_G, r_V + comp * Q_1D + 1 * NUM_COMP * Q_1D, scratch);
-    ContractZ3d(Q_1D, Q_1D, r_t1, s_G, r_V + comp * Q_1D + 2 * NUM_COMP * Q_1D, scratch);
-  }
+  ContractX3d(P_1D, Q_1D, r_U, s_B, r_t1, scratch);
+  ContractY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractZ3d(P_1D, Q_1D, r_t2, s_B, r_t1, scratch);
+  ContractX3d(Q_1D, Q_1D, r_t1, s_G, r_V + 0 * Q_1D, scratch);
+  ContractY3d(Q_1D, Q_1D, r_t1, s_G, r_V + 1 * Q_1D, scratch);
+  ContractZ3d(Q_1D, Q_1D, r_t1, s_G, r_V + 2 * Q_1D, scratch);
 }
 
-//------------------------------------------------------------------------------
-// 3D derivatives transpose
-//------------------------------------------------------------------------------
-inline void GradTransposeTensorCollocated3d(const CeedInt NUM_COMP, const CeedInt P_1D, const CeedInt Q_1D,
+// //------------------------------------------------------------------------------
+// // 3D derivatives transpose
+// //------------------------------------------------------------------------------
+inline void GradTransposeTensorCollocated3d(const CeedInt P_1D, const CeedInt Q_1D,
   private const CeedScalar * restrict r_U, 
   local const CeedScalar * restrict s_B,
   local const CeedScalar * restrict s_G, 
@@ -368,14 +362,12 @@ inline void GradTransposeTensorCollocated3d(const CeedInt NUM_COMP, const CeedIn
   CeedScalar r_t1[T_1D];
   CeedScalar r_t2[T_1D];
 
-  for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-    ContractTransposeZ3d(Q_1D, Q_1D, r_U + comp * Q_1D + 2 * NUM_COMP * Q_1D, s_G, r_t2, scratch);
-    ContractTransposeAddY3d(Q_1D, Q_1D, r_U + comp * Q_1D + 1 * NUM_COMP * Q_1D, s_G, r_t2, scratch);
-    ContractTransposeAddX3d(Q_1D, Q_1D, r_U + comp * Q_1D + 0 * NUM_COMP * Q_1D, s_G, r_t2, scratch);
-    ContractTransposeZ3d(P_1D, Q_1D, r_t2, s_B, r_t1, scratch);
-    ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
-    ContractTransposeX3d(P_1D, Q_1D, r_t2, s_B, r_V + comp * P_1D, scratch);
-  }
+  ContractTransposeZ3d(Q_1D, Q_1D, r_U + 2 * Q_1D, s_G, r_t2, scratch);
+  ContractTransposeAddY3d(Q_1D, Q_1D, r_U + 1 * Q_1D, s_G, r_t2, scratch);
+  ContractTransposeAddX3d(Q_1D, Q_1D, r_U + 0 * Q_1D, s_G, r_t2, scratch);
+  ContractTransposeZ3d(P_1D, Q_1D, r_t2, s_B, r_t1, scratch);
+  ContractTransposeY3d(P_1D, Q_1D, r_t1, s_B, r_t2, scratch);
+  ContractTransposeX3d(P_1D, Q_1D, r_t2, s_B, r_V, scratch);
 }
 
 //------------------------------------------------------------------------------
