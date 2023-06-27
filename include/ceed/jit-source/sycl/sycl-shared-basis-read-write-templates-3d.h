@@ -34,16 +34,14 @@ inline void ReadElementStrided3d(const CeedInt comp, const CeedInt P_1D,
   global const CeedScalar * restrict d_u, private CeedScalar * restrict r_u) {
   
   const CeedInt item_id_x = get_local_id(0);
-  const CeedInt item_id_y = get_local_id(1);
+  const CeedInt item_id_y = get_local_id(1) % T_1D;
+  const CeedInt item_id_z = get_local_id(1) / T_1D;
   const CeedInt elem = get_global_id(2);
 
-  if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
-  // if (item_id_x < P_1D && item_id_y < P_1D) {
-    for (CeedInt z = 0; z < P_1D; z++) {
-      const CeedInt node =  item_id_x + item_id_y * P_1D + z * P_1D * P_1D;
-      const CeedInt ind  = node * strides_node + elem * strides_elem;
-      r_u[z] = d_u[ind + comp * strides_comp];
-    }
+  if (item_id_x < P_1D && item_id_y < P_1D && item_id_z < P_1D && elem < num_elem) {
+    const CeedInt node =  item_id_x + P_1D * (item_id_y + P_1D * item_id_z);
+    const CeedInt ind  = node * strides_node + elem * strides_elem;
+    *r_u = d_u[ind + comp * strides_comp];
   }
 }
 
@@ -55,16 +53,14 @@ inline void WriteElementStrided3d(const CeedInt comp, const CeedInt P_1D,
   private const CeedScalar * restrict r_v, global CeedScalar * restrict d_v) {
 
   const CeedInt item_id_x = get_local_id(0);
-  const CeedInt item_id_y = get_local_id(1);
+  const CeedInt item_id_y = get_local_id(1) % T_1D;
+  const CeedInt item_id_z = get_local_id(1) / T_1D;
   const CeedInt elem = get_global_id(2);
 
-  if (item_id_x < P_1D && item_id_y < P_1D && elem < num_elem) {
-  // if (item_id_x < P_1D && item_id_y < P_1D) {
-    for (CeedInt z = 0; z < P_1D; z++) {
-      const CeedInt node =  item_id_x + item_id_y * P_1D + z * P_1D * P_1D;
-      const CeedInt ind  = node * strides_node + elem * strides_elem;
-      d_v[ind + comp * strides_comp] = r_v[z];
-    }
+  if (item_id_x < P_1D && item_id_y < P_1D && item_id_z < P_1D && elem < num_elem) {
+    const CeedInt node =  item_id_x + P_1D * (item_id_y + P_1D * item_id_z);
+    const CeedInt ind  = node * strides_node + elem * strides_elem;
+    d_v[ind + comp * strides_comp] = *r_v;
   }
 }
 

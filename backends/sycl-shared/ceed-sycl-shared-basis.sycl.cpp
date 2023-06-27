@@ -19,12 +19,19 @@
 //------------------------------------------------------------------------------
 // Compute the local range of for basis kernels
 //------------------------------------------------------------------------------
-static int ComputeLocalRange(Ceed ceed, CeedInt dim, CeedInt thread_1d, CeedInt *local_range, CeedInt max_group_size = 256) {
+static int ComputeLocalRange(Ceed ceed, CeedInt dim, CeedInt thread_1d, CeedInt *local_range, CeedInt max_group_size = 128) {
 
   local_range[0] = thread_1d;
-  local_range[1] = (dim > 1) ? thread_1d : 1; 
+  if (dim ==3 ) local_range[1] = thread_1d * thread_1d;
+  else if (dim == 2) local_range[1] = thread_1d;
+  else local_range[1] = 1;
   
   const CeedInt min_group_size = local_range[0] * local_range[1];
+  
+  if (min_group_size > max_group_size) max_group_size = 256;
+  if (min_group_size > max_group_size) max_group_size = 512;
+  if (min_group_size > max_group_size) max_group_size = 1024;
+  
   if (min_group_size > max_group_size) {
     return CeedError(ceed, CEED_ERROR_BACKEND,"Requested group size is smaller than the required minimum.");
   }
