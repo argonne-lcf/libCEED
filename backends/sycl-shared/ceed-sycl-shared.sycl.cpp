@@ -40,14 +40,6 @@ static int CeedInit_Sycl_shared(const char *resource, Ceed ceed) {
 
   Ceed ceed_ref;
   CeedCallBackend(CeedInit(ref_resource.str().c_str(), &ceed_ref));
-
-  // Ceed_Sycl *ref_data;
-  // CeedCallBackend(CeedGetData(ceed_ref, &ref_data));
-
-  // // Need to use the same queue everywhere for correct synchronization
-  // data->sycl_queue   = ref_data->sycl_queue;
-  // data->sycl_context = ref_data->sycl_context;
-  // data->sycl_device  = ref_data->sycl_device;
   CeedCallBackend(CeedSetStream_Sycl(ceed_ref,&(data->sycl_queue)));
   CeedCallBackend(CeedSetDelegate(ceed, ceed_ref));
 
@@ -64,4 +56,5 @@ CEED_INTERN int CeedRegister_Sycl_Shared(void) {
   CeedCallBackend(CeedRegister("/cpu/sycl/shared", CeedInit_Sycl_shared, 35));
   return CEED_ERROR_SUCCESS;
 }
+
 //------------------------------------------------------------------------------
