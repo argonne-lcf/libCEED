@@ -26,12 +26,12 @@ kernel void Interp(const CeedInt num_elem, global const CeedScalar* restrict d_i
                    global CeedScalar* restrict d_V) {
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D];
  private
-  CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
+  CeedScalar r_U[BASIS_NUM_COMP];
  private
-  CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
+  CeedScalar r_V[BASIS_NUM_COMP];
 
   local CeedScalar  scratch[BASIS_INTERP_SCRATCH_SIZE];
-  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1) * (BASIS_DIM > 2 ? T_1D : 1);
 
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -60,12 +60,12 @@ kernel void InterpTranspose(const CeedInt num_elem, global const CeedScalar* res
   // 2d,3d: elems_per_block * T_1d * T_1d
   local CeedScalar s_B[BASIS_P_1D * BASIS_Q_1D];
  private
-  CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
+  CeedScalar r_U[BASIS_NUM_COMP];
  private
-  CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
+  CeedScalar r_V[BASIS_NUM_COMP];
 
   local CeedScalar  scratch[BASIS_INTERP_SCRATCH_SIZE];
-  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1) * (BASIS_DIM > 2 ? T_1D : 1);
 
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -96,12 +96,12 @@ kernel void Grad(const CeedInt num_elem, global const CeedScalar* restrict d_int
   local CeedScalar s_G[BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D)];
 
  private
-  CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
+  CeedScalar r_U[BASIS_NUM_COMP];
  private
-  CeedScalar r_V[BASIS_NUM_COMP * BASIS_DIM * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
+  CeedScalar r_V[BASIS_NUM_COMP * BASIS_DIM];
 
   local CeedScalar  scratch[BASIS_GRAD_SCRATCH_SIZE];
-  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1) * (BASIS_DIM > 2 ? T_1D : 1);
 
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   loadMatrix(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), d_grad_1d, s_G);
@@ -131,12 +131,12 @@ kernel void GradTranspose(const CeedInt num_elem, global const CeedScalar* restr
   local CeedScalar s_G[BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D)];
 
  private
-  CeedScalar r_U[BASIS_NUM_COMP * BASIS_DIM * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
+  CeedScalar r_U[BASIS_NUM_COMP * BASIS_DIM];
  private
-  CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
+  CeedScalar r_V[BASIS_NUM_COMP];
 
   local CeedScalar  scratch[BASIS_GRAD_SCRATCH_SIZE];
-  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+  local CeedScalar* elem_scratch = scratch + get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1) * (BASIS_DIM > 2 ? T_1D : 1);
 
   loadMatrix(BASIS_P_1D * BASIS_Q_1D, d_interp_1d, s_B);
   loadMatrix(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), d_grad_1d, s_G);
@@ -165,7 +165,7 @@ kernel void GradTranspose(const CeedInt num_elem, global const CeedScalar* restr
 //------------------------------------------------------------------------------
 kernel void Weight(const CeedInt num_elem, global const CeedScalar* restrict q_weight_1d, global CeedScalar* restrict d_W) {
  private
-  CeedScalar r_W[BASIS_DIM > 2 ? BASIS_Q_1D : 1];
+  CeedScalar r_W[1];
 
   // void prefetch(q_weight_1d,BASIS_Q_1D);
 
