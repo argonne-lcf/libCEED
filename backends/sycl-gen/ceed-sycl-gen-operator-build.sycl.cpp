@@ -41,9 +41,9 @@ extern "C" int BlockGridCalculate_Sycl_gen(const CeedInt dim, const CeedInt P_1d
     block_sizes[1]                = thread1d;
     block_sizes[2]                = elems_per_block;
   } else if (dim == 3) {
-    const CeedInt elems_per_block = thread1d < 6 ? 4 : (thread1d < 8 ? 2 : 1);
+    const CeedInt elems_per_block = 1; //thread1d < 6 ? 4 : (thread1d < 8 ? 2 : 1);
     block_sizes[0]                = thread1d;
-    block_sizes[1]                = thread1d;
+    block_sizes[1]                = thread1d * thread1d;
     block_sizes[2]                = elems_per_block;
   }
   return CEED_ERROR_SUCCESS;
@@ -199,6 +199,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
       }
     }
   }
+  use_collograd_parallelization = false;  // Enforcing non-collograd mode for 3D threads
 
   CeedInt block_sizes[3];
   CeedCallBackend(BlockGridCalculate_Sycl_gen(dim, P_1d, Q_1d, block_sizes));
@@ -253,7 +254,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
 
   const CeedInt scratch_size = block_sizes[0] * block_sizes[1] * block_sizes[2];
   code << "  local CeedScalar scratch[" << scratch_size << "];\n";
-  code << "  local CeedScalar * elem_scratch = scratch + get_local_id(2) * T_1D" << (dim > 1 ? "*T_1D" : "") << ";\n";
+  code << "  local CeedScalar * elem_scratch = scratch + get_local_id(2) * T_1D" << (dim > 1 ? "*T_1D" : "") << (dim > 2 ? "*T_1D" : "") << ";\n";
 
   code << "\n  // -- Input field constants and basis data --\n";
   // Initialize constants, and matrices B and G
@@ -391,7 +392,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
 
     // Restriction
     if (eval_mode != CEED_EVAL_WEIGHT && !((eval_mode == CEED_EVAL_NONE) && use_collograd_parallelization)) {
-      code << "    CeedScalar r_u_" << i << "[num_comp_in_" << i << "*P_in_" << i << "];\n";
+      code << "    CeedScalar r_u_" << i << "[num_comp_in_" << i << "];\n";
 
       bool is_strided;
       CeedCallBackend(CeedElemRestrictionIsStrided(Erestrict, &is_strided));
@@ -429,20 +430,20 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
         }
         break;
       case CEED_EVAL_INTERP:
-        code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "*Q_1D];\n";
+        code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "];\n";
         code << "    Interp" << (dim > 1 ? "Tensor" : "") << dim << "d(num_comp_in_" << i << ", P_in_" << i << ", Q_1D, r_u_" << i << ", s_B_in_" << i
              << ", r_t_" << i << ", elem_scratch);\n";
         break;
       case CEED_EVAL_GRAD:
         if (use_collograd_parallelization) {
-          code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "*Q_1D];\n";
+          code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "];\n";
           code << "    Interp" << (dim > 1 ? "Tensor" : "") << dim << "d(num_comp_in_" << i << ", P_in_" << i << ", Q_1D, r_u_" << i << ", s_B_in_"
                << i << ", r_t_" << i << ", elem_scratch);\n";
         } else {
           CeedInt P_1d;
           CeedCallBackend(CeedOperatorFieldGetBasis(op_input_fields[i], &basis));
           CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
-          code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "*DIM*Q_1D];\n";
+          code << "    CeedScalar r_t_" << i << "[num_comp_in_" << i << "*DIM];\n";
           code << "    Grad" << (dim > 1 ? "Tensor" : "") << (dim == 3 && Q_1d >= P_1d ? "Collocated" : "") << dim << "d(num_comp_in_" << i
                << ", P_in_" << i << ", Q_1D, r_u_" << i << (dim > 1 ? ", s_B_in_" : "") << (dim > 1 ? std::to_string(i) : "") << ", s_G_in_" << i
                << ", r_t_" << i << ", elem_scratch);\n";
@@ -470,24 +471,26 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
     if (eval_mode == CEED_EVAL_GRAD) {
       if (use_collograd_parallelization) {
         // Accumulator for gradient slices
-        code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "*Q_1D];\n";
+        code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "];\n";
         code << "    for (CeedInt i = 0; i < num_comp_out_" << i << "; i++) {\n";
-        code << "      for (CeedInt j = 0; j < Q_1D; ++j) {\n";
-        code << "        r_tt_" << i << "[j + i*Q_1D] = 0.0;\n";
-        code << "      }\n";
+        code << "      //for (CeedInt j = 0; j < Q_1D; ++j) {\n";
+        code << "        //r_tt_" << i << "[j + i*Q_1D] = 0.0;\n";
+        code << "        r_tt_" << i << "[i] = 0.0;\n";
+        code << "      //}\n";
         code << "    }\n";
       } else {
-        code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "*DIM*Q_1D];\n";
+        code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "*DIM];\n";
       }
     }
     if (eval_mode == CEED_EVAL_NONE || eval_mode == CEED_EVAL_INTERP) {
-      code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "*Q_1D];\n";
+      code << "    CeedScalar r_tt_" << i << "[num_comp_out_" << i << "];\n";
     }
   }
   // We treat quadrature points per slice in 3d to save registers
   if (use_collograd_parallelization) {
     code << "\n    // Note: Using planes of 3D elements\n";
-    code << "    for (CeedInt q = 0; q < Q_1D; q++) {\n";
+    code << "    //for (CeedInt q = 0; q < Q_1D; q++) {\n";
+    code << "    q = get_local_id(1) / T_1D;\n    {\n";
     code << "      // -- Input fields --\n";
     for (CeedInt i = 0; i < num_input_fields; i++) {
       code << "      // ---- Input field " << i << " ----\n";
@@ -603,7 +606,8 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   if (dim != 3 || use_collograd_parallelization) {
     code << "1";
   } else {
-    code << "Q_1D";
+    // code << "Q_1D";
+    code << "1";
   }
   code << ", in, out);\n";
   //--------------------------------------------------
