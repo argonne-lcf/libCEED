@@ -662,12 +662,12 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
         code << "    private CeedScalar* r_v_" << i << " = r_tt_" << i << ";\n";
         break;  // No action
       case CEED_EVAL_INTERP:
-        code << "    CeedScalar r_v_" << i << "[num_comp_out_" << i << "*P_out_" << i << "];\n";
+        code << "    CeedScalar r_v_" << i << "[num_comp_out_" << i << "];\n";
         code << "    InterpTranspose" << (dim > 1 ? "Tensor" : "") << dim << "d(num_comp_out_" << i << ",P_out_" << i << ", Q_1D, r_tt_" << i
              << ", s_B_out_" << i << ", r_v_" << i << ", elem_scratch);\n";
         break;
       case CEED_EVAL_GRAD:
-        code << "    CeedScalar r_v_" << i << "[num_comp_out_" << i << "*P_out_" << i << "];\n";
+        code << "    CeedScalar r_v_" << i << "[num_comp_out_" << i << "];\n";
         if (use_collograd_parallelization) {
           code << "    InterpTranspose" << (dim > 1 ? "Tensor" : "") << dim << "d(num_comp_out_" << i << ",P_out_" << i << ", Q_1D, r_tt_" << i
                << ", s_B_out_" << i << ", r_v_" << i << ", elem_scratch);\n";
@@ -735,6 +735,8 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   // View kernel for debugging
   CeedDebug256(ceed, 2, "Generated Operator Kernels:\n");
   CeedDebug(ceed, code.str().c_str());
+  // std::cout<<" \n Generated Operator Kernels:\n";
+  // std::cout<<code.str();
 
   std::map<std::string, CeedInt> jit_constants;
   jit_constants["T_1D"]         = block_sizes[0];
