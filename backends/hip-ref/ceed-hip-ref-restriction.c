@@ -27,8 +27,7 @@ static int CeedElemRestrictionApply_Hip(CeedElemRestriction r, CeedTransposeMode
   CeedCallBackend(CeedElemRestrictionGetCeed(r, &ceed));
   Ceed_Hip *data;
   CeedCallBackend(CeedGetData(ceed, &data));
-  const CeedInt block_size = 64;
-  const CeedInt num_nodes  = impl->num_nodes;
+  const CeedInt num_nodes = impl->num_nodes;
   CeedInt       num_elem, elem_size;
   CeedElemRestrictionGetNumElements(r, &num_elem);
   CeedCallBackend(CeedElemRestrictionGetElementSize(r, &elem_size));
@@ -54,25 +53,38 @@ static int CeedElemRestrictionApply_Hip(CeedElemRestriction r, CeedTransposeMode
       kernel             = impl->OffsetNoTranspose;
       void   *args[]     = {&num_elem, &impl->d_ind, &d_u, &d_v};
       CeedInt block_size = elem_size < 256 ? (elem_size > 64 ? elem_size : 64) : 256;
+
       CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
     } else {
       // -- Strided restriction
       kernel             = impl->StridedNoTranspose;
       void   *args[]     = {&num_elem, &d_u, &d_v};
       CeedInt block_size = elem_size < 256 ? (elem_size > 64 ? elem_size : 64) : 256;
+
       CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
     }
   } else {
     // E-vector -> L-vector
     if (impl->d_ind) {
       // -- Offsets provided
-      kernel       = impl->OffsetTranspose;
-      void *args[] = {&impl->d_l_vec_indices, &impl->d_t_indices, &impl->d_t_offsets, &d_u, &d_v};
-      CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
+      CeedInt block_size = 64;
+      if (impl->OffsetTranspose) {
+        kernel       = impl->OffsetTranspose;
+        void *args[] = {&num_elem, &impl->d_ind, &d_u, &d_v};
+
+        CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
+      } else {
+        kernel       = impl->OffsetTransposeDet;
+        void *args[] = {&impl->d_l_vec_indices, &impl->d_t_indices, &impl->d_t_offsets, &d_u, &d_v};
+
+        CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
+      }
     } else {
       // -- Strided restriction
-      kernel       = impl->StridedTranspose;
-      void *args[] = {&num_elem, &d_u, &d_v};
+      kernel             = impl->StridedTranspose;
+      void   *args[]     = {&num_elem, &d_u, &d_v};
+      CeedInt block_size = 64;
+
       CeedCallBackend(CeedRunKernel_Hip(ceed, kernel, CeedDivUpInt(num_nodes, block_size), block_size, args));
     }
   }
@@ -207,11 +219,16 @@ static int CeedElemRestrictionOffset_Hip(const CeedElemRestriction r, const Ceed
 //------------------------------------------------------------------------------
 // Create restriction
 //------------------------------------------------------------------------------
-int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, CeedElemRestriction r) {
+int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, const bool *orients,
+                                  const CeedInt8 *curl_orients, CeedElemRestriction r) {
   Ceed ceed;
   CeedCallBackend(CeedElemRestrictionGetCeed(r, &ceed));
   CeedElemRestriction_Hip *impl;
   CeedCallBackend(CeedCalloc(1, &impl));
+  Ceed parent;
+  CeedCallBackend(CeedGetParent(ceed, &parent));
+  bool is_deterministic;
+  CeedCallBackend(CeedIsDeterministic(parent, &is_deterministic));
   CeedInt num_elem, num_comp, elem_size;
   CeedCallBackend(CeedElemRestrictionGetNumElements(r, &num_elem));
   CeedCallBackend(CeedElemRestrictionGetNumComponents(r, &num_comp));
@@ -219,6 +236,11 @@ int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, 
   CeedInt size        = num_elem * elem_size;
   CeedInt strides[3]  = {1, size, elem_size};
   CeedInt comp_stride = 1;
+
+  CeedRestrictionType rstr_type;
+  CeedCallBackend(CeedElemRestrictionGetType(r, &rstr_type));
+  CeedCheck(rstr_type != CEED_RESTRICTION_ORIENTED && rstr_type != CEED_RESTRICTION_CURL_ORIENTED, ceed, CEED_ERROR_BACKEND,
+            "Backend does not implement CeedElemRestrictionCreateOriented or CeedElemRestrictionCreateCurlOriented");
 
   // Stride data
   bool is_strided;
@@ -267,7 +289,7 @@ int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, 
         CeedCallHip(ceed, hipMalloc((void **)&impl->d_ind, size * sizeof(CeedInt)));
         impl->d_ind_allocated = impl->d_ind;  // We own the device memory
         CeedCallHip(ceed, hipMemcpy(impl->d_ind, indices, size * sizeof(CeedInt), hipMemcpyHostToDevice));
-        CeedCallBackend(CeedElemRestrictionOffset_Hip(r, indices));
+        if (is_deterministic) CeedCallBackend(CeedElemRestrictionOffset_Hip(r, indices));
       }
       break;
     }
@@ -291,7 +313,7 @@ int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, 
         CeedCallBackend(CeedMalloc(elem_size * num_elem, &impl->h_ind_allocated));
         CeedCallHip(ceed, hipMemcpy(impl->h_ind_allocated, impl->d_ind, elem_size * num_elem * sizeof(CeedInt), hipMemcpyDeviceToHost));
         impl->h_ind = impl->h_ind_allocated;
-        CeedCallBackend(CeedElemRestrictionOffset_Hip(r, indices));
+        if (is_deterministic) CeedCallBackend(CeedElemRestrictionOffset_Hip(r, indices));
       }
       break;
     }
@@ -312,15 +334,20 @@ int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, 
                                   "RESTR_NUM_COMP", num_comp, "RESTR_NUM_NODES", num_nodes, "RESTR_COMP_STRIDE", comp_stride, "RESTR_STRIDE_NODES",
                                   strides[0], "RESTR_STRIDE_COMP", strides[1], "RESTR_STRIDE_ELEM", strides[2]));
   CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "StridedNoTranspose", &impl->StridedNoTranspose));
-  CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "OffsetNoTranspose", &impl->OffsetNoTranspose));
   CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "StridedTranspose", &impl->StridedTranspose));
-  CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "OffsetTranspose", &impl->OffsetTranspose));
+  CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "OffsetNoTranspose", &impl->OffsetNoTranspose));
+  if (!is_deterministic) {
+    CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "OffsetTranspose", &impl->OffsetTranspose));
+  } else {
+    CeedCallBackend(CeedGetKernel_Hip(ceed, impl->module, "OffsetTransposeDet", &impl->OffsetTransposeDet));
+  }
   CeedCallBackend(CeedFree(&restriction_kernel_path));
   CeedCallBackend(CeedFree(&restriction_kernel_source));
 
   // Register backend functions
   CeedCallBackend(CeedSetBackendFunction(ceed, "ElemRestriction", r, "Apply", CeedElemRestrictionApply_Hip));
   CeedCallBackend(CeedSetBackendFunction(ceed, "ElemRestriction", r, "ApplyUnsigned", CeedElemRestrictionApply_Hip));
+  CeedCallBackend(CeedSetBackendFunction(ceed, "ElemRestriction", r, "ApplyUnoriented", CeedElemRestrictionApply_Hip));
   CeedCallBackend(CeedSetBackendFunction(ceed, "ElemRestriction", r, "GetOffsets", CeedElemRestrictionGetOffsets_Hip));
   CeedCallBackend(CeedSetBackendFunction(ceed, "ElemRestriction", r, "Destroy", CeedElemRestrictionDestroy_Hip));
   return CEED_ERROR_SUCCESS;

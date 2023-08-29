@@ -5,8 +5,8 @@
 //
 // This file is part of CEED:  http://github.com/ceed
 
-#ifndef _ceed_cuda_h
-#define _ceed_cuda_h
+#ifndef _ceed_cuda_ref_h
+#define _ceed_cuda_ref_h
 
 #include <ceed.h>
 #include <ceed/backend.h>
@@ -25,10 +25,11 @@ typedef struct {
 
 typedef struct {
   CUmodule   module;
-  CUfunction StridedTranspose;
   CUfunction StridedNoTranspose;
-  CUfunction OffsetTranspose;
+  CUfunction StridedTranspose;
   CUfunction OffsetNoTranspose;
+  CUfunction OffsetTranspose;
+  CUfunction OffsetTransposeDet;
   CeedInt    num_nodes;
   CeedInt   *h_ind;
   CeedInt   *h_ind_allocated;
@@ -113,7 +114,8 @@ CEED_INTERN int CeedGetCublasHandle_Cuda(Ceed ceed, cublasHandle_t *handle);
 
 CEED_INTERN int CeedVectorCreate_Cuda(CeedSize n, CeedVector vec);
 
-CEED_INTERN int CeedElemRestrictionCreate_Cuda(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, CeedElemRestriction r);
+CEED_INTERN int CeedElemRestrictionCreate_Cuda(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, const bool *orients,
+                                               const CeedInt8 *curl_orients, CeedElemRestriction r);
 
 CEED_INTERN int CeedBasisCreateTensorH1_Cuda(CeedInt dim, CeedInt P_1d, CeedInt Q_1d, const CeedScalar *interp_1d, const CeedScalar *grad_1d,
                                              const CeedScalar *q_ref_1d, const CeedScalar *q_weight_1d, CeedBasis basis);
@@ -127,4 +129,4 @@ CEED_INTERN int CeedQFunctionContextCreate_Cuda(CeedQFunctionContext ctx);
 
 CEED_INTERN int CeedOperatorCreate_Cuda(CeedOperator op);
 
-#endif
+#endif  // _ceed_cuda_ref_h

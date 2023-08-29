@@ -120,6 +120,14 @@ CEED_EXTERN bool CeedDebugFlagEnv(void);
   @ref     Backend
 **/
 #define CeedDebugEnv(...) CeedDebugEnv256((unsigned char)CEED_DEBUG_COLOR_NONE, ##__VA_ARGS__)
+/**
+  Print warning information in color
+
+  @ingroup Ceed
+  @ref     Backend
+**/
+#define CeedWarn(...) \
+  { CeedDebugImpl256(CEED_DEBUG_COLOR_WARNING, ##__VA_ARGS__); }
 
 /// Handle for object handling TensorContraction
 /// @ingroup CeedBasis
@@ -140,37 +148,44 @@ CEED_INTERN int CeedReallocArray(size_t n, size_t unit, void *p);
 CEED_INTERN int CeedStringAllocCopy(const char *source, char **copy);
 CEED_INTERN int CeedFree(void *p);
 
-#define CeedChk(ierr)        \
+/**
+  @brief Calls a libCEED function and then checks the resulting error code.
+  If the error code is non-zero, then the error handler is called and the call from the current function with the error code.
+
+  @ref Developer
+**/
+#define CeedCall(...)        \
   do {                       \
-    int ierr_ = ierr;        \
+    int ierr_ = __VA_ARGS__; \
     if (ierr_) return ierr_; \
   } while (0)
-#define CeedChkBackend(ierr)                                     \
-  do {                                                           \
-    int ierr_ = ierr;                                            \
-    if (ierr_) {                                                 \
-      if (ierr_ > CEED_ERROR_SUCCESS) return CEED_ERROR_BACKEND; \
-      else return ierr_;                                         \
-    }                                                            \
+
+/**
+  @brief Calls a libCEED function and then checks the resulting error code.
+  If the error code is non-zero, then the error handler is called and the call from the current function with the error code.
+  All interface level error codes are upgraded to `CEED_ERROR_BACKEND`.
+
+  @ref Developer
+**/
+#define CeedCallBackend(...)                                                     \
+  do {                                                                           \
+    int ierr_ = __VA_ARGS__;                                                     \
+    if (ierr_) return (ierr_ > CEED_ERROR_SUCCESS) ? CEED_ERROR_BACKEND : ierr_; \
   } while (0)
 
-#define CeedCall(...)          \
-  do {                         \
-    int ierr_q_ = __VA_ARGS__; \
-    CeedChk(ierr_q_);          \
-  } while (0)
-#define CeedCallBackend(...)   \
-  do {                         \
-    int ierr_q_ = __VA_ARGS__; \
-    CeedChkBackend(ierr_q_);   \
+/**
+  @brief Check that a particular condition is true and returns a `CeedError` if not.
+
+  @ref Developer
+**/
+#define CeedCheck(cond, ceed, ecode, ...)                    \
+  do {                                                       \
+    if (!(cond)) return CeedError(ceed, ecode, __VA_ARGS__); \
   } while (0)
 
-#define CeedCheck(cond, ceed, ecode, ...)         \
-  do {                                            \
-    if (!(cond)) {                                \
-      return CeedError(ceed, ecode, __VA_ARGS__); \
-    }                                             \
-  } while (0)
+/* Note - these are legacy macros that should be removed eventually */
+#define CeedChk(...) CeedCall(__VA_ARGS__)
+#define CeedChkBackend(...) CeedCallBackend(__VA_ARGS__)
 
 /* Note that CeedMalloc and CeedCalloc will, generally, return pointers with different memory alignments:
    CeedMalloc returns pointers aligned at CEED_ALIGN bytes, while CeedCalloc uses the alignment of calloc. */
@@ -206,14 +221,29 @@ CEED_EXTERN int CeedVectorGetData(CeedVector vec, void *data);
 CEED_EXTERN int CeedVectorSetData(CeedVector vec, void *data);
 CEED_EXTERN int CeedVectorReference(CeedVector vec);
 
-CEED_EXTERN int CeedElemRestrictionApplyUnsigned(CeedElemRestriction rstr, CeedTransposeMode t_mode, CeedVector u, CeedVector ru,
-                                                 CeedRequest *request);
+/// Type of element restriction;
+/// @ingroup CeedElemRestriction
+typedef enum {
+  /// Standard element restriction with offsets
+  CEED_RESTRICTION_STANDARD = 1,
+  /// Oriented element restriction
+  CEED_RESTRICTION_ORIENTED = 2,
+  /// Curl-oriented element restriction
+  CEED_RESTRICTION_CURL_ORIENTED = 3,
+  /// Strided element restriction
+  CEED_RESTRICTION_STRIDED = 4,
+} CeedRestrictionType;
+
+CEED_EXTERN int CeedElemRestrictionGetType(CeedElemRestriction rstr, CeedRestrictionType *rstr_type);
+CEED_EXTERN int CeedElemRestrictionIsStrided(CeedElemRestriction rstr, bool *is_strided);
 CEED_EXTERN int CeedElemRestrictionGetStrides(CeedElemRestriction rstr, CeedInt (*strides)[3]);
+CEED_EXTERN int CeedElemRestrictionHasBackendStrides(CeedElemRestriction rstr, bool *has_backend_strides);
 CEED_EXTERN int CeedElemRestrictionGetOffsets(CeedElemRestriction rstr, CeedMemType mem_type, const CeedInt **offsets);
 CEED_EXTERN int CeedElemRestrictionRestoreOffsets(CeedElemRestriction rstr, const CeedInt **offsets);
-CEED_EXTERN int CeedElemRestrictionIsStrided(CeedElemRestriction rstr, bool *is_strided);
-CEED_EXTERN int CeedElemRestrictionIsOriented(CeedElemRestriction rstr, bool *is_oriented);
-CEED_EXTERN int CeedElemRestrictionHasBackendStrides(CeedElemRestriction rstr, bool *has_backend_strides);
+CEED_EXTERN int CeedElemRestrictionGetOrientations(CeedElemRestriction rstr, CeedMemType mem_type, const bool **orients);
+CEED_EXTERN int CeedElemRestrictionRestoreOrientations(CeedElemRestriction rstr, const bool **orients);
+CEED_EXTERN int CeedElemRestrictionGetCurlOrientations(CeedElemRestriction rstr, CeedMemType mem_type, const CeedInt8 **curl_orients);
+CEED_EXTERN int CeedElemRestrictionRestoreCurlOrientations(CeedElemRestriction rstr, const CeedInt8 **curl_orients);
 CEED_EXTERN int CeedElemRestrictionGetELayout(CeedElemRestriction rstr, CeedInt (*layout)[3]);
 CEED_EXTERN int CeedElemRestrictionSetELayout(CeedElemRestriction rstr, CeedInt layout[3]);
 CEED_EXTERN int CeedElemRestrictionGetData(CeedElemRestriction rstr, void *data);
@@ -255,6 +285,7 @@ CEED_EXTERN int CeedTensorContractGetCeed(CeedTensorContract contract, Ceed *cee
 CEED_EXTERN int CeedTensorContractGetData(CeedTensorContract contract, void *data);
 CEED_EXTERN int CeedTensorContractSetData(CeedTensorContract contract, void *data);
 CEED_EXTERN int CeedTensorContractReference(CeedTensorContract contract);
+CEED_EXTERN int CeedTensorContractReferenceCopy(CeedTensorContract tensor, CeedTensorContract *tensor_copy);
 CEED_EXTERN int CeedTensorContractDestroy(CeedTensorContract *contract);
 
 CEED_EXTERN int CeedQFunctionRegister(const char *name, const char *source, CeedInt vec_length, CeedQFunctionUser f,

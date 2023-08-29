@@ -1,252 +1,181 @@
 #!/usr/bin/env python3
-
-import os
-import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'junit-xml')))
-from junit_xml import TestCase, TestSuite
+from junit_common import *
 
 
-def parse_testargs(file):
-    if os.path.splitext(file)[1] in ['.c', '.cpp']:
-        return sum([[[line.split()[1:], [line.split()[0].strip('//TESTARGS(name=').strip(')')]]]
-                    for line in open(file).readlines()
-                    if line.startswith('//TESTARGS')], [])
-    elif os.path.splitext(file)[1] == '.usr':
-        return sum([[[line.split()[1:], [line.split()[0].strip('C_TESTARGS(name=').strip(')')]]]
-                    for line in open(file).readlines()
-                    if line.startswith('C_TESTARGS')], [])
-    elif os.path.splitext(file)[1] in ['.f90']:
-        return sum([[[line.split()[1:], [line.split()[0].strip('C_TESTARGS(name=').strip(')')]]]
-                    for line in open(file).readlines()
-                    if line.startswith('! TESTARGS')], [])
-    raise RuntimeError('Unrecognized extension for file: {}'.format(file))
+def create_argparser() -> argparse.ArgumentParser:
+    """Creates argument parser to read command line arguments
+
+    Returns:
+        argparse.ArgumentParser: Created `ArgumentParser`
+    """
+    parser = argparse.ArgumentParser('Test runner with JUnit and TAP output')
+    parser.add_argument('-c', '--ceed-backends', type=str, nargs='*', default=['/cpu/self'], help='libCEED backend to use with convergence tests')
+    parser.add_argument('-m', '--mode', type=RunMode, action=CaseInsensitiveEnumAction, help='Output mode, junit or tap', default=RunMode.JUNIT)
+    parser.add_argument('-n', '--nproc', type=int, default=1, help='number of MPI processes')
+    parser.add_argument('-o', '--output', type=Optional[Path], default=None, help='Output file to write test')
+    parser.add_argument('-b', '--junit-batch', type=str, default='', help='Name of JUnit batch for output file')
+    parser.add_argument('test', help='Test executable', nargs='?')
+
+    return parser
 
 
-def get_source(test):
-    if test.startswith('petsc-'):
-        return os.path.join('examples', 'petsc', test[6:] + '.c')
-    elif test.startswith('mfem-'):
-        return os.path.join('examples', 'mfem', test[5:] + '.cpp')
-    elif test.startswith('nek-'):
-        return os.path.join('examples', 'nek', 'bps', test[4:] + '.usr')
-    elif test.startswith('fluids-'):
-        return os.path.join('examples', 'fluids', test[7:] + '.c')
-    elif test.startswith('solids-'):
-        return os.path.join('examples', 'solids', test[7:] + '.c')
-    elif test.startswith('ex'):
-        return os.path.join('examples', 'ceed', test + '.c')
-    elif test.endswith('-f'):
-        return os.path.join('tests', test + '.f90')
-    else:
-        return os.path.join('tests', test + '.c')
+# Necessary functions for running tests
+class CeedSuiteSpec(SuiteSpec):
+    def get_source_path(self, test: str) -> Path:
+        """Compute path to test source file
 
+        Args:
+            test (str): Name of test
 
-def get_testargs(source):
-    args = parse_testargs(source)
-    if not args:
-        return [(['{ceed_resource}'], [''])]
-    return args
+        Returns:
+            Path: Path to source file
+        """
+        prefix, rest = test.split('-', 1)
+        if prefix == 'petsc':
+            return (Path('examples') / 'petsc' / rest).with_suffix('.c')
+        elif prefix == 'mfem':
+            return (Path('examples') / 'mfem' / rest).with_suffix('.cpp')
+        elif prefix == 'nek':
+            return (Path('examples') / 'nek' / 'bps' / rest).with_suffix('.usr')
+        elif prefix == 'fluids':
+            return (Path('examples') / 'fluids' / rest).with_suffix('.c')
+        elif prefix == 'solids':
+            return (Path('examples') / 'solids' / rest).with_suffix('.c')
+        elif test.startswith('ex'):
+            return (Path('examples') / 'ceed' / test).with_suffix('.c')
+        elif test.endswith('-f'):
+            return (Path('tests') / test).with_suffix('.f90')
+        else:
+            return (Path('tests') / test).with_suffix('.c')
 
+    # get path to executable
+    def get_run_path(self, test: str) -> Path:
+        """Compute path to built test executable file
 
-def check_required_failure(test_case, stderr, required):
-    if required in stderr:
-        test_case.status = 'fails with required: {}'.format(required)
-    else:
-        test_case.add_failure_info('required: {}'.format(required))
+        Args:
+            test (str): Name of test
 
+        Returns:
+            Path: Path to test executable
+        """
+        return Path('build') / test
 
-def contains_any(resource, substrings):
-    return any((sub in resource for sub in substrings))
+    def get_output_path(self, test: str, output_file: str) -> Path:
+        """Compute path to expected output file
 
+        Args:
+            test (str): Name of test
+            output_file (str): File name of output file
 
-def skip_rule(test, resource):
-    return any((
-        test.startswith('t4') and contains_any(resource, ['occa']),
-        test.startswith('t5') and contains_any(resource, ['occa']),
-        test.startswith('ex') and contains_any(resource, ['occa']),
-        test.startswith('mfem') and contains_any(resource, ['occa']),
-        test.startswith('nek') and contains_any(resource, ['occa']),
-        test.startswith('petsc-') and contains_any(resource, ['occa']),
-        test.startswith('fluids-') and contains_any(resource, ['occa']),
-        test.startswith('solids-') and contains_any(resource, ['occa']),
-        test.startswith('t318') and contains_any(resource, ['/gpu/cuda/ref']),
-        test.startswith('t506') and contains_any(resource, ['/gpu/cuda/shared']),
-        ))
+        Returns:
+            Path: Path to expected output file
+        """
+        return Path('tests') / 'output' / output_file
 
+    def check_pre_skip(self, test: str, spec: TestSpec, resource: str, nproc: int) -> Optional[str]:
+        """Check if a test case should be skipped prior to running, returning the reason for skipping
 
-def run(test, backends, mode):
-    import subprocess
-    import time
-    import difflib
-    source = get_source(test)
-    all_args = get_testargs(source)
+        Args:
+            test (str): Name of test
+            spec (TestSpec): Test case specification
+            resource (str): libCEED backend
+            nproc (int): Number of MPI processes to use when running test case
 
-    if mode.lower() == "tap":
-        print('1..' + str(len(all_args) * len(backends)))
+        Returns:
+            Optional[str]: Skip reason, or `None` if test case should not be skipped
+        """
+        if contains_any(resource, ['occa']) and startswith_any(test, ['t4', 't5', 'ex', 'mfem', 'nek', 'petsc', 'fluids', 'solids']):
+            return 'OCCA mode not supported'
+        if test.startswith('t318') and contains_any(resource, ['/gpu/cuda/ref']):
+            return 'CUDA ref backend not supported'
+        if test.startswith('t506') and contains_any(resource, ['/gpu/cuda/shared']):
+            return 'CUDA shared backend not supported'
 
-    test_cases = []
-    my_env = os.environ.copy()
-    my_env["CEED_ERROR_HANDLER"] = 'exit'
-    index = 1
-    for args, name in all_args:
-        for ceed_resource in backends:
-            rargs = [os.path.join('build', test)] + args.copy()
-            rargs[rargs.index('{ceed_resource}')] = ceed_resource
+    def check_post_skip(self, test: str, spec: TestSpec, resource: str, stderr: str) -> Optional[str]:
+        """Check if a test case should be allowed to fail, based on its stderr output
 
-            # run test
-            if skip_rule(test, ceed_resource):
-                test_case = TestCase('{} {}'.format(test, ceed_resource),
-                                     elapsed_sec=0,
-                                     timestamp=time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime()),
-                                     stdout='',
-                                     stderr='')
-                test_case.add_skipped_info('Pre-run skip rule')
-            else:
-                start = time.time()
-                proc = subprocess.run(rargs,
-                                      stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE,
-                                      env=my_env)
-                proc.stdout = proc.stdout.decode('utf-8')
-                proc.stderr = proc.stderr.decode('utf-8')
+        Args:
+            test (str): Name of test
+            spec (TestSpec): Test case specification
+            resource (str): libCEED backend
+            stderr (str): Standard error output from test case execution
 
-                test_case = TestCase('{} {} {}'.format(test, *name, ceed_resource),
-                                     classname=os.path.dirname(source),
-                                     elapsed_sec=time.time() - start,
-                                     timestamp=time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(start)),
-                                     stdout=proc.stdout,
-                                     stderr=proc.stderr)
-                ref_stdout = os.path.join('tests/output', test + '.out')
+        Returns:
+            Optional[str]: Skip reason, or `None` if unexpeced error
+        """
+        if 'OCCA backend failed to use' in stderr:
+            return f'OCCA mode not supported'
+        elif 'Backend does not implement' in stderr:
+            return f'Backend does not implement'
+        elif 'Can only provide HOST memory for this backend' in stderr:
+            return f'Device memory not supported'
+        elif 'Can only set HOST memory for this backend' in stderr:
+            return f'Device memory not supported'
+        elif 'Test not implemented in single precision' in stderr:
+            return f'Test not implemented in single precision'
+        elif 'No SYCL devices of the requested type are available' in stderr:
+            return f'SYCL device type not available'
+        return None
 
-            # check for allowed errors
-            if not test_case.is_skipped() and proc.stderr:
-                if 'OCCA backend failed to use' in proc.stderr:
-                    test_case.add_skipped_info('occa mode not supported {} {}'.format(test, ceed_resource))
-                elif 'Backend does not implement' in proc.stderr:
-                    test_case.add_skipped_info('not implemented {} {}'.format(test, ceed_resource))
-                elif 'Can only provide HOST memory for this backend' in proc.stderr:
-                    test_case.add_skipped_info('device memory not supported {} {}'.format(test, ceed_resource))
-                elif 'Test not implemented in single precision' in proc.stderr:
-                    test_case.add_skipped_info('not implemented {} {}'.format(test, ceed_resource))
-                elif 'No SYCL devices of the requested type are available' in proc.stderr:
-                    test_case.add_skipped_info('sycl device type not available {} {}'.format(test, ceed_resource))
+    def check_required_failure(self, test: str, spec: TestSpec, resource: str, stderr: str) -> tuple[str, bool]:
+        """Check whether a test case is expected to fail and if it failed expectedly
 
-            # check required failures
-            if not test_case.is_skipped():
-                if test[:4] in 't006 t007'.split():
-                    check_required_failure(test_case, proc.stderr, 'No suitable backend:')
-                if test[:4] in 't008'.split():
-                    check_required_failure(test_case, proc.stderr, 'Available backend resources:')
-                if test[:4] in 't110 t111 t112 t113 t114'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot grant CeedVector array access')
-                if test[:4] in 't115'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot grant CeedVector read-only array access, the access lock is already in use')
-                if test[:4] in 't116'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot destroy CeedVector, the writable access lock is in use')
-                if test[:4] in 't117'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot restore CeedVector array access, access was not granted')
-                if test[:4] in 't118'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot sync CeedVector, the access lock is already in use')
-                if test[:4] in 't215'.split():
-                    check_required_failure(test_case, proc.stderr, 'Cannot destroy CeedElemRestriction, a process has read access to the offset data')
-                if test[:4] in 't303'.split():
-                    check_required_failure(test_case, proc.stderr, 'Length of input/output vectors incompatible with basis dimensions')
-                if test[:4] in 't408'.split():
-                    check_required_failure(test_case, proc.stderr, 'CeedQFunctionContextGetData(): Cannot grant CeedQFunctionContext data access, a process has read access')
-                if test[:4] in 't409'.split() and contains_any(ceed_resource, ['memcheck']):
-                    check_required_failure(test_case, proc.stderr, 'Context data changed while accessed in read-only mode')
+        Args:
+            test (str): Name of test
+            spec (TestSpec): Test case specification
+            resource (str): libCEED backend
+            stderr (str): Standard error output from test case execution
 
-            # classify other results
-            if not test_case.is_skipped() and not test_case.status:
-                if proc.stderr:
-                    test_case.add_failure_info('stderr', proc.stderr)
-                elif proc.returncode != 0:
-                    test_case.add_error_info('returncode = {}'.format(proc.returncode))
-                elif os.path.isfile(ref_stdout):
-                    with open(ref_stdout) as ref:
-                        diff = list(difflib.unified_diff(ref.readlines(),
-                                                         proc.stdout.splitlines(keepends=True),
-                                                         fromfile=ref_stdout,
-                                                         tofile='New'))
-                    if diff:
-                        test_case.add_failure_info('stdout', output=''.join(diff))
-                elif proc.stdout and test[:4] not in 't003':
-                    test_case.add_failure_info('stdout', output=proc.stdout)
+        Returns:
+            tuple[str, bool]: Tuple of the expected failure string and whether it was present in `stderr`
+        """
+        test_id: str = test[:4]
+        fail_str: str = ''
+        if test_id in ['t006', 't007']:
+            fail_str = 'No suitable backend:'
+        elif test_id in ['t008']:
+            fail_str = 'Available backend resources:'
+        elif test_id in ['t110', 't111', 't112', 't113', 't114']:
+            fail_str = 'Cannot grant CeedVector array access'
+        elif test_id in ['t115']:
+            fail_str = 'Cannot grant CeedVector read-only array access, the access lock is already in use'
+        elif test_id in ['t116']:
+            fail_str = 'Cannot destroy CeedVector, the writable access lock is in use'
+        elif test_id in ['t117']:
+            fail_str = 'Cannot restore CeedVector array access, access was not granted'
+        elif test_id in ['t118']:
+            fail_str = 'Cannot sync CeedVector, the access lock is already in use'
+        elif test_id in ['t215']:
+            fail_str = 'Cannot destroy CeedElemRestriction, a process has read access to the offset data'
+        elif test_id in ['t303']:
+            fail_str = 'Length of input/output vectors incompatible with basis dimensions'
+        elif test_id in ['t408']:
+            fail_str = 'CeedQFunctionContextGetData(): Cannot grant CeedQFunctionContext data access, a process has read access'
+        elif test_id in ['t409'] and contains_any(resource, ['memcheck']):
+            fail_str = 'Context data changed while accessed in read-only mode'
 
-            # store result
-            test_case.args = ' '.join(rargs)
-            test_cases.append(test_case)
+        return fail_str, fail_str in stderr
 
-            if mode.lower() == "tap":
-                # print incremental output if TAP mode
-                print('# Test: {}'.format(test_case.name.split(' ')[1]))
-                print('# $ {}'.format(test_case.args))
-                if test_case.is_error():
-                    print('not ok {} - ERROR: {}'.format(index, (test_case.errors[0]['message'] or "NO MESSAGE").strip()))
-                    print('Output: \n{}'.format((test_case.errors[0]['output'] or "NO OUTPUT").strip()))
-                    if test_case.is_failure():
-                        print('            FAIL: {}'.format(index, (test_case.failures[0]['message'] or "NO MESSAGE").strip()))
-                        print('Output: \n{}'.format((test_case.failures[0]['output'] or "NO OUTPUT").strip()))
-                elif test_case.is_failure():
-                    print('not ok {} - FAIL: {}'.format(index, (test_case.failures[0]['message'] or "NO MESSAGE").strip()))
-                    print('Output: \n{}'.format((test_case.failures[0]['output'] or "NO OUTPUT").strip()))
-                elif test_case.is_skipped():
-                    print('ok {} - SKIP: {}'.format(index, (test_case.skipped[0]['message'] or "NO MESSAGE").strip()))
-                else:
-                    print('ok {} - PASS'.format(index))
-                sys.stdout.flush()
-            else:
-                # print error or failure information if JUNIT mode
-                if test_case.is_error() or test_case.is_failure():
-                    print('Test: {} {}'.format(test_case.name.split(' ')[0], test_case.name.split(' ')[1]))
-                    print('  $ {}'.format(test_case.args))
-                    if test_case.is_error():
-                        print('ERROR: {}'.format((test_case.errors[0]['message'] or "NO MESSAGE").strip()))
-                        print('Output: \n{}'.format((test_case.errors[0]['output'] or "NO OUTPUT").strip()))
-                    if test_case.is_failure():
-                        print('FAIL: {}'.format((test_case.failures[0]['message'] or "NO MESSAGE").strip()))
-                        print('Output: \n{}'.format((test_case.failures[0]['output'] or "NO OUTPUT").strip()))
-                sys.stdout.flush()
-            index += 1
+    def check_allowed_stdout(self, test: str) -> bool:
+        """Check whether a test is allowed to print console output
 
-    return TestSuite(test, test_cases)
+        Args:
+            test (str): Name of test
+
+        Returns:
+            bool: True if the test is allowed to print console output
+        """
+        return test[:4] in ['t003']
+
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser('Test runner with JUnit and TAP output')
-    parser.add_argument('--mode', help='Output mode, JUnit or TAP', default="JUnit")
-    parser.add_argument('--output', help='Output file to write test', default=None)
-    parser.add_argument('--gather', help='Gather all *.junit files into XML', action='store_true')
-    parser.add_argument('test', help='Test executable', nargs='?')
-    args = parser.parse_args()
+    args = create_argparser().parse_args()
 
-    if args.gather:
-        gather()
-    else:
-        backends = os.environ['BACKENDS'].split()
+    # run tests
+    result: TestSuite = run_tests(args.test, args.ceed_backends, args.mode, args.nproc, CeedSuiteSpec())
 
-        # run tests
-        result = run(args.test, backends, args.mode)
-
-        # build output
-        if args.mode.lower() == "junit":
-            junit_batch = ''
-            try:
-                junit_batch = '-' + os.environ['JUNIT_BATCH']
-            except:
-                pass
-            output = (os.path.join('build', args.test + junit_batch + '.junit')
-                      if args.output is None
-                      else args.output)
-
-            with open(output, 'w') as fd:
-                TestSuite.to_file(fd, [result])
-        elif args.mode.lower() != "tap":
-            raise Exception("output mode not recognized")
-
-        # check return code
-        for t in result.test_cases:
-            failures = len([c for c in result.test_cases if c.is_failure()])
-            errors = len([c for c in result.test_cases if c.is_error()])
-            if failures + errors > 0 and args.mode.lower() != "tap":
-                sys.exit(1)
+    # write output and check for failures
+    if args.mode is RunMode.JUNIT:
+        write_junit_xml(result, args.output, args.junit_batch)
+        if has_failures(result):
+            sys.exit(1)

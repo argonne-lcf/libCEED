@@ -5,14 +5,13 @@
 //
 // This file is part of CEED:  http://github.com/ceed
 
-#ifndef _ceed_hip_h
-#define _ceed_hip_h
+#ifndef _ceed_hip_ref_h
+#define _ceed_hip_ref_h
 
 #include <ceed.h>
 #include <ceed/backend.h>
 #include <ceed/jit-source/hip/hip-types.h>
 #include <hip/hip_runtime.h>
-
 #if (HIP_VERSION >= 50200000)
 #include <hipblas/hipblas.h>  // IWYU pragma: export
 #else
@@ -30,10 +29,11 @@ typedef struct {
 
 typedef struct {
   hipModule_t   module;
-  hipFunction_t StridedTranspose;
   hipFunction_t StridedNoTranspose;
-  hipFunction_t OffsetTranspose;
+  hipFunction_t StridedTranspose;
   hipFunction_t OffsetNoTranspose;
+  hipFunction_t OffsetTranspose;
+  hipFunction_t OffsetTransposeDet;
   CeedInt       num_nodes;
   CeedInt      *h_ind;
   CeedInt      *h_ind_allocated;
@@ -118,7 +118,8 @@ CEED_INTERN int CeedGetHipblasHandle_Hip(Ceed ceed, hipblasHandle_t *handle);
 
 CEED_INTERN int CeedVectorCreate_Hip(CeedSize n, CeedVector vec);
 
-CEED_INTERN int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, CeedElemRestriction r);
+CEED_INTERN int CeedElemRestrictionCreate_Hip(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, const bool *orients,
+                                              const CeedInt8 *curl_orients, CeedElemRestriction r);
 
 CEED_INTERN int CeedBasisCreateTensorH1_Hip(CeedInt dim, CeedInt P_1d, CeedInt Q_1d, const CeedScalar *interp_1d, const CeedScalar *grad_1d,
                                             const CeedScalar *q_ref_1d, const CeedScalar *q_weight_1d, CeedBasis basis);
@@ -132,4 +133,4 @@ CEED_INTERN int CeedQFunctionContextCreate_Hip(CeedQFunctionContext ctx);
 
 CEED_INTERN int CeedOperatorCreate_Hip(CeedOperator op);
 
-#endif
+#endif  // _ceed_hip_ref_h

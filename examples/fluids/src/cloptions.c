@@ -27,6 +27,7 @@ PetscErrorCode RegisterProblems_NS(AppCtx app_ctx) {
   PetscCall(PetscFunctionListAdd(&app_ctx->problems, "channel", NS_CHANNEL));
   PetscCall(PetscFunctionListAdd(&app_ctx->problems, "gaussian_wave", NS_GAUSSIAN_WAVE));
   PetscCall(PetscFunctionListAdd(&app_ctx->problems, "newtonian", NS_NEWTONIAN_IG));
+  PetscCall(PetscFunctionListAdd(&app_ctx->problems, "taylor_green", NS_TAYLOR_GREEN));
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -185,6 +186,11 @@ PetscErrorCode ProcessCommandLineOptions(MPI_Comm comm, AppCtx app_ctx, SimpleBC
 
   PetscCall(PetscOptionsBool("-diff_filter_monitor", "Enable differential filtering TSMonitor", NULL, app_ctx->diff_filter_monitor,
                              &app_ctx->diff_filter_monitor, NULL));
+
+  // Mesh Transformation Options
+  app_ctx->mesh_transform_type = MESH_TRANSFORM_NONE;
+  PetscCall(PetscOptionsEnum("-mesh_transform", "Mesh transform to perform", NULL, MeshTransformTypes, (PetscEnum)app_ctx->mesh_transform_type,
+                             (PetscEnum *)&app_ctx->mesh_transform_type, NULL));
 
   PetscOptionsEnd();
 

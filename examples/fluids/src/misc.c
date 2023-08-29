@@ -17,19 +17,20 @@
 #include "../qfunctions/mass.h"
 
 PetscErrorCode ICs_FixMultiplicity(DM dm, CeedData ceed_data, User user, Vec Q_loc, Vec Q, CeedScalar time) {
+  Ceed ceed = user->ceed;
   PetscFunctionBeginUser;
 
   // ---------------------------------------------------------------------------
   // Update time for evaluation
   // ---------------------------------------------------------------------------
-  if (user->phys->ics_time_label) CeedOperatorSetContextDouble(ceed_data->op_ics_ctx->op, user->phys->ics_time_label, &time);
+  if (user->phys->ics_time_label) PetscCallCeed(ceed, CeedOperatorSetContextDouble(ceed_data->op_ics_ctx->op, user->phys->ics_time_label, &time));
 
   // ---------------------------------------------------------------------------
   // ICs
   // ---------------------------------------------------------------------------
   // -- CEED Restriction
   CeedVector q0_ceed;
-  CeedElemRestrictionCreateVector(ceed_data->elem_restr_q, &q0_ceed, NULL);
+  PetscCallCeed(ceed, CeedElemRestrictionCreateVector(ceed_data->elem_restr_q, &q0_ceed, NULL));
 
   // -- Place PETSc vector in CEED vector
   PetscCall(ApplyCeedOperatorLocalToGlobal(NULL, Q, ceed_data->op_ics_ctx));
@@ -39,7 +40,7 @@ PetscErrorCode ICs_FixMultiplicity(DM dm, CeedData ceed_data, User user, Vec Q_l
   // ---------------------------------------------------------------------------
   // -- CEED Restriction
   CeedVector mult_vec;
-  CeedElemRestrictionCreateVector(ceed_data->elem_restr_q, &mult_vec, NULL);
+  PetscCallCeed(ceed, CeedElemRestrictionCreateVector(ceed_data->elem_restr_q, &mult_vec, NULL));
 
   // -- Place PETSc vector in CEED vector
   PetscMemType m_mem_type;
@@ -48,7 +49,7 @@ PetscErrorCode ICs_FixMultiplicity(DM dm, CeedData ceed_data, User user, Vec Q_l
   PetscCall(VecP2C(multiplicity_loc, &m_mem_type, mult_vec));
 
   // -- Get multiplicity
-  CeedElemRestrictionGetMultiplicity(ceed_data->elem_restr_q, mult_vec);
+  PetscCallCeed(ceed, CeedElemRestrictionGetMultiplicity(ceed_data->elem_restr_q, mult_vec));
 
   // -- Restore vectors
   PetscCall(VecC2P(mult_vec, m_mem_type, multiplicity_loc));
@@ -68,8 +69,8 @@ PetscErrorCode ICs_FixMultiplicity(DM dm, CeedData ceed_data, User user, Vec Q_l
   PetscCall(DMRestoreGlobalVector(dm, &multiplicity));
 
   // Cleanup
-  CeedVectorDestroy(&mult_vec);
-  CeedVectorDestroy(&q0_ceed);
+  PetscCallCeed(ceed, CeedVectorDestroy(&mult_vec));
+  PetscCallCeed(ceed, CeedVectorDestroy(&q0_ceed));
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -262,45 +263,27 @@ PetscErrorCode CreateMassQFunction(Ceed ceed, CeedInt N, CeedInt q_data_size, Ce
 
   switch (N) {
     case 1:
-      CeedQFunctionCreateInterior(ceed, 1, Mass_1, Mass_1_loc, qf);
+      PetscCallCeed(ceed, CeedQFunctionCreateInterior(ceed, 1, Mass_1, Mass_1_loc, qf));
       break;
     case 5:
-      CeedQFunctionCreateInterior(ceed, 1, Mass_5, Mass_5_loc, qf);
+      PetscCallCeed(ceed, CeedQFunctionCreateInterior(ceed, 1, Mass_5, Mass_5_loc, qf));
       break;
     case 7:
-      CeedQFunctionCreateInterior(ceed, 1, Mass_7, Mass_7_loc, qf);
+      PetscCallCeed(ceed, CeedQFunctionCreateInterior(ceed, 1, Mass_7, Mass_7_loc, qf));
       break;
     case 9:
-      CeedQFunctionCreateInterior(ceed, 1, Mass_9, Mass_9_loc, qf);
+      PetscCallCeed(ceed, CeedQFunctionCreateInterior(ceed, 1, Mass_9, Mass_9_loc, qf));
       break;
     case 22:
-      CeedQFunctionCreateInterior(ceed, 1, Mass_22, Mass_22_loc, qf);
+      PetscCallCeed(ceed, CeedQFunctionCreateInterior(ceed, 1, Mass_22, Mass_22_loc, qf));
       break;
     default:
       SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_SUP, "Could not find mass qfunction of size %d", N);
   }
 
-  CeedQFunctionAddInput(*qf, "u", N, CEED_EVAL_INTERP);
-  CeedQFunctionAddInput(*qf, "qdata", q_data_size, CEED_EVAL_NONE);
-  CeedQFunctionAddOutput(*qf, "v", N, CEED_EVAL_INTERP);
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-/* @brief L^2 Projection of a source FEM function to a target FEM space
- *
- * To solve system using a lumped mass matrix, pass a KSP object with ksp_type=preonly, pc_type=jacobi, pc_jacobi_type=rowsum.
- *
- * @param[in]  source_vec    Global Vec of the source FEM function. NULL indicates using rhs_matop_ctx->X_loc
- * @param[out] target_vec    Global Vec of the target (result) FEM function. NULL indicates using rhs_matop_ctx->Y_loc
- * @param[in]  rhs_matop_ctx MatopApplyContext for performing the RHS evaluation
- * @param[in]  ksp           KSP for solving the consistent projection problem
- */
-PetscErrorCode ComputeL2Projection(Vec source_vec, Vec target_vec, OperatorApplyContext rhs_matop_ctx, KSP ksp) {
-  PetscFunctionBeginUser;
-
-  PetscCall(ApplyCeedOperatorGlobalToGlobal(source_vec, target_vec, rhs_matop_ctx));
-  PetscCall(KSPSolve(ksp, target_vec, target_vec));
-
+  PetscCallCeed(ceed, CeedQFunctionAddInput(*qf, "u", N, CEED_EVAL_INTERP));
+  PetscCallCeed(ceed, CeedQFunctionAddInput(*qf, "qdata", q_data_size, CEED_EVAL_NONE));
+  PetscCallCeed(ceed, CeedQFunctionAddOutput(*qf, "v", N, CEED_EVAL_INTERP));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -469,6 +452,7 @@ PetscErrorCode IntArrayP2C(PetscInt num_entries, PetscInt **array_petsc, CeedInt
 
 // Print information about the given simulation run
 PetscErrorCode PrintRunInfo(User user, Physics phys_ctx, ProblemData *problem, MPI_Comm comm) {
+  Ceed ceed = user->ceed;
   PetscFunctionBeginUser;
   // Header and rank
   char        host_name[PETSC_MAX_PATH_LEN];
@@ -484,13 +468,13 @@ PetscErrorCode PrintRunInfo(User user, Physics phys_ctx, ProblemData *problem, M
                         host_name, comm_size));
 
   // Problem specific info
-  PetscCall(problem->print_info(problem, user->app_ctx));
+  PetscCall(problem->print_info(user, problem, user->app_ctx));
 
   // libCEED
   const char *used_resource;
   CeedMemType mem_type_backend;
-  CeedGetResource(user->ceed, &used_resource);
-  CeedGetPreferredMemType(user->ceed, &mem_type_backend);
+  PetscCallCeed(ceed, CeedGetResource(user->ceed, &used_resource));
+  PetscCallCeed(ceed, CeedGetPreferredMemType(user->ceed, &mem_type_backend));
   PetscCall(PetscPrintf(comm,
                         "  libCEED:\n"
                         "    libCEED Backend                    : %s\n"
@@ -567,70 +551,74 @@ PetscErrorCode PrintRunInfo(User user, Physics phys_ctx, ProblemData *problem, M
           part_local_dofs[0] / num_comp_q, part_local_dofs[1] / num_comp_q, part_local_dofs[2] / num_comp_q, part_local_dof_ratio));
     }
 
-    PetscInt num_remote_roots_total = 0, num_remote_leaves_total = 0, num_ghost_interface_ranks = 0, num_owned_interface_ranks = 0;
-    {
-      PetscSF            sf;
-      PetscInt           nrranks, niranks;
-      const PetscInt    *roffset, *rmine, *rremote, *ioffset, *irootloc;
-      const PetscMPIInt *rranks, *iranks;
-      PetscCall(DMGetSectionSF(user->dm, &sf));
-      PetscCall(PetscSFGetRootRanks(sf, &nrranks, &rranks, &roffset, &rmine, &rremote));
-      PetscCall(PetscSFGetLeafRanks(sf, &niranks, &iranks, &ioffset, &irootloc));
-      for (PetscInt i = 0; i < nrranks; i++) {
-        if (rranks[i] == rank) continue;  // Ignore same-part global->local transfers
-        num_remote_roots_total += roffset[i + 1] - roffset[i];
-        num_ghost_interface_ranks++;
+    if (comm_size != 1) {
+      PetscInt num_remote_roots_total = 0, num_remote_leaves_total = 0, num_ghost_interface_ranks = 0, num_owned_interface_ranks = 0;
+      {
+        PetscSF            sf;
+        PetscInt           nrranks, niranks;
+        const PetscInt    *roffset, *rmine, *rremote, *ioffset, *irootloc;
+        const PetscMPIInt *rranks, *iranks;
+        PetscCall(DMGetSectionSF(user->dm, &sf));
+        PetscCall(PetscSFGetRootRanks(sf, &nrranks, &rranks, &roffset, &rmine, &rremote));
+        PetscCall(PetscSFGetLeafRanks(sf, &niranks, &iranks, &ioffset, &irootloc));
+        for (PetscInt i = 0; i < nrranks; i++) {
+          if (rranks[i] == rank) continue;  // Ignore same-part global->local transfers
+          num_remote_roots_total += roffset[i + 1] - roffset[i];
+          num_ghost_interface_ranks++;
+        }
+        for (PetscInt i = 0; i < niranks; i++) {
+          if (iranks[i] == rank) continue;
+          num_remote_leaves_total += ioffset[i + 1] - ioffset[i];
+          num_owned_interface_ranks++;
+        }
       }
-      for (PetscInt i = 0; i < niranks; i++) {
-        if (iranks[i] == rank) continue;
-        num_remote_leaves_total += ioffset[i + 1] - ioffset[i];
-        num_owned_interface_ranks++;
+      PetscCallMPI(MPI_Gather(&num_remote_roots_total, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
+      if (!rank) {
+        PetscCall(PetscSortInt(comm_size, gather_buffer));
+        part_boundary_dofs[0]           = gather_buffer[0];              // min
+        part_boundary_dofs[1]           = gather_buffer[comm_size - 1];  // max
+        part_boundary_dofs[2]           = gather_buffer[median_index];   // median
+        PetscReal part_shared_dof_ratio = (PetscReal)part_boundary_dofs[1] / (PetscReal)part_boundary_dofs[2];
+        PetscCall(PetscPrintf(
+            comm, "    Ghost Interface %" PetscInt_FMT "-DoF nodes        : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
+            num_comp_q, part_boundary_dofs[0] / num_comp_q, part_boundary_dofs[1] / num_comp_q, part_boundary_dofs[2] / num_comp_q,
+            part_shared_dof_ratio));
       }
-    }
-    PetscCallMPI(MPI_Gather(&num_remote_roots_total, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
-    if (!rank) {
-      PetscCall(PetscSortInt(comm_size, gather_buffer));
-      part_boundary_dofs[0]           = gather_buffer[0];              // min
-      part_boundary_dofs[1]           = gather_buffer[comm_size - 1];  // max
-      part_boundary_dofs[2]           = gather_buffer[median_index];   // median
-      PetscReal part_shared_dof_ratio = (PetscReal)part_boundary_dofs[1] / (PetscReal)part_boundary_dofs[2];
-      PetscCall(PetscPrintf(
-          comm, "    Ghost Interface %" PetscInt_FMT "-DoF nodes        : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n", num_comp_q,
-          part_boundary_dofs[0] / num_comp_q, part_boundary_dofs[1] / num_comp_q, part_boundary_dofs[2] / num_comp_q, part_shared_dof_ratio));
-    }
 
-    PetscCallMPI(MPI_Gather(&num_ghost_interface_ranks, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
-    if (!rank) {
-      PetscCall(PetscSortInt(comm_size, gather_buffer));
-      part_neighbors[0]              = gather_buffer[0];              // min
-      part_neighbors[1]              = gather_buffer[comm_size - 1];  // max
-      part_neighbors[2]              = gather_buffer[median_index];   // median
-      PetscReal part_neighbors_ratio = (PetscReal)part_neighbors[1] / (PetscReal)part_neighbors[2];
-      PetscCall(PetscPrintf(comm, "    Ghost Interface Ranks              : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
-                            part_neighbors[0], part_neighbors[1], part_neighbors[2], part_neighbors_ratio));
-    }
+      PetscCallMPI(MPI_Gather(&num_ghost_interface_ranks, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
+      if (!rank) {
+        PetscCall(PetscSortInt(comm_size, gather_buffer));
+        part_neighbors[0]              = gather_buffer[0];              // min
+        part_neighbors[1]              = gather_buffer[comm_size - 1];  // max
+        part_neighbors[2]              = gather_buffer[median_index];   // median
+        PetscReal part_neighbors_ratio = (PetscReal)part_neighbors[1] / (PetscReal)part_neighbors[2];
+        PetscCall(PetscPrintf(comm, "    Ghost Interface Ranks              : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
+                              part_neighbors[0], part_neighbors[1], part_neighbors[2], part_neighbors_ratio));
+      }
 
-    PetscCallMPI(MPI_Gather(&num_remote_leaves_total, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
-    if (!rank) {
-      PetscCall(PetscSortInt(comm_size, gather_buffer));
-      part_boundary_dofs[0]           = gather_buffer[0];              // min
-      part_boundary_dofs[1]           = gather_buffer[comm_size - 1];  // max
-      part_boundary_dofs[2]           = gather_buffer[median_index];   // median
-      PetscReal part_shared_dof_ratio = (PetscReal)part_boundary_dofs[1] / (PetscReal)part_boundary_dofs[2];
-      PetscCall(PetscPrintf(
-          comm, "    Owned Interface %" PetscInt_FMT "-DoF nodes        : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n", num_comp_q,
-          part_boundary_dofs[0] / num_comp_q, part_boundary_dofs[1] / num_comp_q, part_boundary_dofs[2] / num_comp_q, part_shared_dof_ratio));
-    }
+      PetscCallMPI(MPI_Gather(&num_remote_leaves_total, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
+      if (!rank) {
+        PetscCall(PetscSortInt(comm_size, gather_buffer));
+        part_boundary_dofs[0]           = gather_buffer[0];              // min
+        part_boundary_dofs[1]           = gather_buffer[comm_size - 1];  // max
+        part_boundary_dofs[2]           = gather_buffer[median_index];   // median
+        PetscReal part_shared_dof_ratio = (PetscReal)part_boundary_dofs[1] / (PetscReal)part_boundary_dofs[2];
+        PetscCall(PetscPrintf(
+            comm, "    Owned Interface %" PetscInt_FMT "-DoF nodes        : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
+            num_comp_q, part_boundary_dofs[0] / num_comp_q, part_boundary_dofs[1] / num_comp_q, part_boundary_dofs[2] / num_comp_q,
+            part_shared_dof_ratio));
+      }
 
-    PetscCallMPI(MPI_Gather(&num_owned_interface_ranks, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
-    if (!rank) {
-      PetscCall(PetscSortInt(comm_size, gather_buffer));
-      part_neighbors[0]              = gather_buffer[0];              // min
-      part_neighbors[1]              = gather_buffer[comm_size - 1];  // max
-      part_neighbors[2]              = gather_buffer[median_index];   // median
-      PetscReal part_neighbors_ratio = (PetscReal)part_neighbors[1] / (PetscReal)part_neighbors[2];
-      PetscCall(PetscPrintf(comm, "    Owned Interface Ranks              : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
-                            part_neighbors[0], part_neighbors[1], part_neighbors[2], part_neighbors_ratio));
+      PetscCallMPI(MPI_Gather(&num_owned_interface_ranks, 1, MPIU_INT, gather_buffer, 1, MPIU_INT, 0, comm));
+      if (!rank) {
+        PetscCall(PetscSortInt(comm_size, gather_buffer));
+        part_neighbors[0]              = gather_buffer[0];              // min
+        part_neighbors[1]              = gather_buffer[comm_size - 1];  // max
+        part_neighbors[2]              = gather_buffer[median_index];   // median
+        PetscReal part_neighbors_ratio = (PetscReal)part_neighbors[1] / (PetscReal)part_neighbors[2];
+        PetscCall(PetscPrintf(comm, "    Owned Interface Ranks              : %" PetscInt_FMT ", %" PetscInt_FMT ", %" PetscInt_FMT ", %f\n",
+                              part_neighbors[0], part_neighbors[1], part_neighbors[2], part_neighbors_ratio));
+      }
     }
 
     if (!rank) PetscCall(PetscFree(gather_buffer));

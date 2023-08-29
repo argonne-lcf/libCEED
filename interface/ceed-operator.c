@@ -616,6 +616,9 @@ int CeedOperatorReferenceCopy(CeedOperator op, CeedOperator *op_copy) {
   Active fields must be specified using this function, but their data (in a CeedVector) is passed in CeedOperatorApply().
   There can be at most one active input CeedVector and at most one active output CeedVector passed to CeedOperatorApply().
 
+  The number of quadrature points must agree across all points.
+  When using @ref CEED_BASIS_COLLOCATED, the number of quadrature points is determined by the element size of r.
+
   @param[in,out] op         CeedOperator on which to provide the field
   @param[in]     field_name Name of the field (to be matched with the name used by CeedQFunction)
   @param[in]     r          CeedElemRestriction
@@ -640,9 +643,12 @@ int CeedOperatorSetField(CeedOperator op, const char *field_name, CeedElemRestri
             "ElemRestriction with %" CeedInt_FMT " elements incompatible with prior %" CeedInt_FMT " elements", num_elem, op->num_elem);
 
   CeedInt num_qpts = 0;
-  CeedCall(CeedBasisGetNumQuadraturePoints(b, &num_qpts));
-  CeedCheck(b == CEED_BASIS_COLLOCATED || !op->num_qpts || op->num_qpts == num_qpts, op->ceed, CEED_ERROR_DIMENSION,
-            "Basis with %" CeedInt_FMT " quadrature points incompatible with prior %" CeedInt_FMT " points", num_qpts, op->num_qpts);
+  if (b == CEED_BASIS_COLLOCATED) CeedCall(CeedElemRestrictionGetElementSize(r, &num_qpts));
+  else CeedCall(CeedBasisGetNumQuadraturePoints(b, &num_qpts));
+  CeedCheck(op->num_qpts == 0 || op->num_qpts == num_qpts, op->ceed, CEED_ERROR_DIMENSION,
+            "%s must correspond to the same number of quadrature points as previously added Bases. Found %" CeedInt_FMT
+            " quadrature points but expected %" CeedInt_FMT " quadrature points.",
+            b == CEED_BASIS_COLLOCATED ? "ElemRestriction" : "Basis", num_qpts, op->num_qpts);
   CeedQFunctionField qf_field;
   CeedOperatorField *op_field;
   bool               is_input = true;
@@ -689,7 +695,7 @@ found:
     op->has_restriction = true;  // Restriction set, but num_elem may be 0
   }
   CeedCall(CeedBasisReferenceCopy(b, &(*op_field)->basis));
-  if (!op->num_qpts && b != CEED_BASIS_COLLOCATED) CeedCall(CeedOperatorSetNumQuadraturePoints(op, num_qpts));
+  if (op->num_qpts == 0) CeedCall(CeedOperatorSetNumQuadraturePoints(op, num_qpts));
 
   op->num_fields += 1;
   CeedCall(CeedStringAllocCopy(field_name, (char **)&(*op_field)->field_name));
@@ -1044,9 +1050,14 @@ int CeedOperatorSetQFunctionAssemblyDataUpdateNeeded(CeedOperator op, bool needs
   @ref Advanced
 **/
 int CeedOperatorSetNumQuadraturePoints(CeedOperator op, CeedInt num_qpts) {
-  CeedCheck(!op->is_composite, op->ceed, CEED_ERROR_MINOR, "Not defined for composite operator");
-  CeedCheck(op->num_qpts == 0, op->ceed, CEED_ERROR_MINOR, "Number of quadrature points already defined");
+  CeedCheck(!op->is_composite, op->ceed, CEED_ERROR_MINOR, "Not defined for composite CeedOperator");
   CeedCheck(!op->is_immutable, op->ceed, CEED_ERROR_MAJOR, "Operator cannot be changed after set as immutable");
+  if (op->num_qpts > 0) {
+    CeedWarn(
+        "CeedOperatorSetNumQuadraturePoints will be removed from the libCEED interface in the next release.\n"
+        "This function is reduntant and you can safely remove any calls to this function without replacing them.");
+    CeedCheck(num_qpts == op->num_qpts, op->ceed, CEED_ERROR_DIMENSION, "Different number of quadrature points already defined for the CeedOperator");
+  }
   op->num_qpts = num_qpts;
   return CEED_ERROR_SUCCESS;
 }
@@ -1256,7 +1267,8 @@ int CeedOperatorGetContextFieldLabel(CeedOperator op, const char *field_name, Ce
   CeedCall(CeedOperatorIsComposite(op, &is_composite));
 
   if (is_composite) {
-    // Check if composite label already created
+    // Composite operator
+    // -- Check if composite label already created
     for (CeedInt i = 0; i < op->num_context_labels; i++) {
       if (!strcmp(op->context_labels[i]->name, field_name)) {
         *field_label = op->context_labels[i];
@@ -1264,7 +1276,7 @@ int CeedOperatorGetContextFieldLabel(CeedOperator op, const char *field_name, Ce
       }
     }
 
-    // Create composite label if needed
+    // -- Create composite label if needed
     CeedInt               num_sub;
     CeedOperator         *sub_operators;
     CeedContextFieldLabel new_field_label;
@@ -1275,13 +1287,13 @@ int CeedOperatorGetContextFieldLabel(CeedOperator op, const char *field_name, Ce
     CeedCall(CeedCalloc(num_sub, &new_field_label->sub_labels));
     new_field_label->num_sub_labels = num_sub;
 
-    bool label_found = false;
+    bool field_found = false;
     for (CeedInt i = 0; i < num_sub; i++) {
       if (sub_operators[i]->qf->ctx) {
         CeedContextFieldLabel new_field_label_i;
         CeedCall(CeedQFunctionContextGetFieldLabel(sub_operators[i]->qf->ctx, field_name, &new_field_label_i));
         if (new_field_label_i) {
-          label_found                    = true;
+          field_found                    = true;
           new_field_label->sub_labels[i] = new_field_label_i;
           new_field_label->name          = new_field_label_i->name;
           new_field_label->description   = new_field_label_i->description;
@@ -1306,17 +1318,23 @@ int CeedOperatorGetContextFieldLabel(CeedOperator op, const char *field_name, Ce
         }
       }
     }
-    if (!label_found) {
+    // -- Cleanup if field was found
+    if (field_found) {
+      *field_label = new_field_label;
+    } else {
       // LCOV_EXCL_START
       CeedCall(CeedFree(&new_field_label->sub_labels));
       CeedCall(CeedFree(&new_field_label));
       *field_label = NULL;
       // LCOV_EXCL_STOP
-    } else {
-      *field_label = new_field_label;
     }
   } else {
-    CeedCall(CeedQFunctionContextGetFieldLabel(op->qf->ctx, field_name, field_label));
+    // Single, non-composite operator
+    if (op->qf->ctx) {
+      CeedCall(CeedQFunctionContextGetFieldLabel(op->qf->ctx, field_name, field_label));
+    } else {
+      *field_label = NULL;
+    }
   }
 
   // Set label in operator

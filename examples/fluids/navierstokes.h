@@ -16,12 +16,24 @@
 #include "qfunctions/newtonian_types.h"
 #include "qfunctions/stabilization_types.h"
 
-// -----------------------------------------------------------------------------
-// PETSc Version
-// -----------------------------------------------------------------------------
 #if PETSC_VERSION_LT(3, 19, 0)
 #error "PETSc v3.19 or later is required"
 #endif
+
+#define PetscCeedChk(ceed, ierr)                                    \
+  do {                                                              \
+    if (ierr != CEED_ERROR_SUCCESS) {                               \
+      const char *error_message;                                    \
+      CeedGetErrorMessage(ceed, &error_message);                    \
+      SETERRQ(PETSC_COMM_SELF, PETSC_ERR_LIB, "%s", error_message); \
+    }                                                               \
+  } while (0)
+
+#define PetscCallCeed(ceed, ...) \
+  do {                           \
+    int ierr_q_ = __VA_ARGS__;   \
+    PetscCeedChk(ceed, ierr_q_); \
+  } while (0)
 
 // -----------------------------------------------------------------------------
 // Enums
@@ -75,12 +87,19 @@ typedef enum {
 } TestType;
 static const char *const TestTypes[] = {"none", "solver", "turb_spanstats", "diff_filter", "TestType", "TESTTYPE_", NULL};
 
-// Test mode type
+// Subgrid-Stress mode type
 typedef enum {
   SGS_MODEL_NONE        = 0,
   SGS_MODEL_DATA_DRIVEN = 1,
 } SGSModelType;
 static const char *const SGSModelTypes[] = {"none", "data_driven", "SGSModelType", "SGS_MODEL_", NULL};
+
+// Mesh transformation type
+typedef enum {
+  MESH_TRANSFORM_NONE      = 0,
+  MESH_TRANSFORM_PLATEMESH = 1,
+} MeshTransformType;
+static const char *const MeshTransformTypes[] = {"none", "platemesh", "MeshTransformType", "MESH_TRANSFORM_", NULL};
 
 static const char *const DifferentialFilterDampingFunctions[] = {
     "none", "van_driest", "mms", "DifferentialFilterDampingFunction", "DIFF_FILTER_DAMP_", NULL};
@@ -148,7 +167,8 @@ struct AppCtx_private {
   // Subgrid Stress Model
   SGSModelType sgs_model_type;
   // Differential Filtering
-  PetscBool diff_filter_monitor;
+  PetscBool         diff_filter_monitor;
+  MeshTransformType mesh_transform_type;
 };
 
 // libCEED data struct
@@ -279,7 +299,7 @@ struct ProblemData_private {
       apply_freestream, apply_inflow_jacobian, apply_outflow_jacobian, apply_freestream_jacobian;
   bool      non_zero_time;
   PetscBool bc_from_ics, use_strong_bc_ceed;
-  PetscErrorCode (*print_info)(ProblemData *, AppCtx);
+  PetscErrorCode (*print_info)(User, ProblemData *, AppCtx);
 };
 
 extern int FreeContextPetsc(void *);
@@ -288,6 +308,7 @@ extern int FreeContextPetsc(void *);
 // Set up problems
 // -----------------------------------------------------------------------------
 // Set up function for each problem
+extern PetscErrorCode NS_TAYLOR_GREEN(ProblemData *problem, DM dm, void *ctx, SimpleBC bc);
 extern PetscErrorCode NS_GAUSSIAN_WAVE(ProblemData *problem, DM dm, void *ctx, SimpleBC bc);
 extern PetscErrorCode NS_CHANNEL(ProblemData *problem, DM dm, void *ctx, SimpleBC bc);
 extern PetscErrorCode NS_BLASIUS(ProblemData *problem, DM dm, void *ctx, SimpleBC bc);
@@ -299,24 +320,21 @@ extern PetscErrorCode NS_ADVECTION(ProblemData *problem, DM dm, void *ctx, Simpl
 extern PetscErrorCode NS_ADVECTION2D(ProblemData *problem, DM dm, void *ctx, SimpleBC bc);
 
 // Print function for each problem
-extern PetscErrorCode PRINT_NEWTONIAN(ProblemData *problem, AppCtx app_ctx);
+extern PetscErrorCode PRINT_NEWTONIAN(User user, ProblemData *problem, AppCtx app_ctx);
 
-extern PetscErrorCode PRINT_EULER_VORTEX(ProblemData *problem, AppCtx app_ctx);
+extern PetscErrorCode PRINT_EULER_VORTEX(User user, ProblemData *problem, AppCtx app_ctx);
 
-extern PetscErrorCode PRINT_SHOCKTUBE(ProblemData *problem, AppCtx app_ctx);
+extern PetscErrorCode PRINT_SHOCKTUBE(User user, ProblemData *problem, AppCtx app_ctx);
 
-extern PetscErrorCode PRINT_ADVECTION(ProblemData *problem, AppCtx app_ctx);
+extern PetscErrorCode PRINT_ADVECTION(User user, ProblemData *problem, AppCtx app_ctx);
 
-extern PetscErrorCode PRINT_ADVECTION2D(ProblemData *problem, AppCtx app_ctx);
+extern PetscErrorCode PRINT_ADVECTION2D(User user, ProblemData *problem, AppCtx app_ctx);
 
 PetscErrorCode PrintRunInfo(User user, Physics phys_ctx, ProblemData *problem, MPI_Comm comm);
 
 // -----------------------------------------------------------------------------
 // libCEED functions
 // -----------------------------------------------------------------------------
-// Utility function - essential BC dofs are encoded in closure indices as -(i+1).
-PetscInt Involute(PetscInt i);
-
 // Utility function to create local CEED restriction
 PetscErrorCode CreateRestrictionFromPlex(Ceed ceed, DM dm, CeedInt height, DMLabel domain_label, CeedInt label_value, PetscInt dm_field,
                                          CeedElemRestriction *elem_restr);
@@ -325,6 +343,8 @@ PetscErrorCode CreateRestrictionFromPlex(Ceed ceed, DM dm, CeedInt height, DMLab
 PetscErrorCode GetRestrictionForDomain(Ceed ceed, DM dm, CeedInt height, DMLabel domain_label, PetscInt label_value, PetscInt dm_field, CeedInt Q,
                                        CeedInt q_data_size, CeedElemRestriction *elem_restr_q, CeedElemRestriction *elem_restr_x,
                                        CeedElemRestriction *elem_restr_qd_i);
+
+PetscErrorCode CreateBasisFromPlex(Ceed ceed, DM dm, DMLabel domain_label, CeedInt label_value, CeedInt height, CeedInt dm_field, CeedBasis *basis);
 
 // Utility function to create CEED Composite Operator for the entire domain
 PetscErrorCode CreateOperatorForDomain(Ceed ceed, DM dm, SimpleBC bc, CeedData ceed_data, Physics phys, CeedOperator op_apply_vol,
@@ -361,7 +381,12 @@ PetscErrorCode UpdateBoundaryValues(User user, Vec Q_loc, PetscReal t);
 PetscErrorCode CreateDM(MPI_Comm comm, ProblemData *problem, MatType, VecType, DM *dm);
 
 // Set up DM
-PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, SimpleBC bc, Physics phys);
+PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, PetscInt q_extra, SimpleBC bc, Physics phys);
+PetscErrorCode DMSetupByOrderBegin_FEM(PetscBool setup_faces, PetscBool setup_coords, PetscInt degree, PetscInt coord_order, PetscInt q_extra,
+                                       CeedInt num_fields, const CeedInt *field_sizes, DM dm);
+PetscErrorCode DMSetupByOrderEnd_FEM(PetscBool setup_coords, DM dm);
+PetscErrorCode DMSetupByOrder_FEM(PetscBool setup_faces, PetscBool setup_coords, PetscInt degree, PetscInt coord_order, PetscInt q_extra,
+                                  CeedInt num_fields, const CeedInt *field_sizes, DM dm);
 
 // Refine DM for high-order viz
 PetscErrorCode VizRefineDM(DM dm, User user, ProblemData *problem, SimpleBC bc, Physics phys);
@@ -406,8 +431,6 @@ extern const PetscInt32 FLUIDS_FILE_TOKEN_64;
 // Create appropriate mass qfunction based on number of components N
 PetscErrorCode CreateMassQFunction(Ceed ceed, CeedInt N, CeedInt q_data_size, CeedQFunction *qf);
 
-PetscErrorCode ComputeL2Projection(Vec source_vec, Vec target_vec, OperatorApplyContext rhs_matop_ctx, KSP ksp);
-
 PetscErrorCode NodalProjectionDataDestroy(NodalProjectionData context);
 
 PetscErrorCode PHASTADatFileOpen(const MPI_Comm comm, const char path[PETSC_MAX_PATH_LEN], const PetscInt char_array_len, PetscInt dims[2],
@@ -447,8 +470,7 @@ PetscErrorCode GridAnisotropyTensorCalculateCollocatedVector(Ceed ceed, User use
 // -----------------------------------------------------------------------------
 
 // Setup StrongBCs that use QFunctions
-PetscErrorCode SetupStrongBC_Ceed(Ceed ceed, CeedData ceed_data, DM dm, User user, ProblemData *problem, SimpleBC bc, CeedInt Q_sur,
-                                  CeedInt q_data_size_sur);
+PetscErrorCode SetupStrongBC_Ceed(Ceed ceed, CeedData ceed_data, DM dm, User user, ProblemData *problem, SimpleBC bc);
 
 PetscErrorCode FreestreamBCSetup(ProblemData *problem, DM dm, void *ctx, NewtonianIdealGasContext newtonian_ig_ctx, const StatePrimitive *reference);
 PetscErrorCode OutflowBCSetup(ProblemData *problem, DM dm, void *ctx, NewtonianIdealGasContext newtonian_ig_ctx, const StatePrimitive *reference);

@@ -10,6 +10,7 @@
 
 #include <ceed.h>
 #include <petscdmplex.h>
+#include <petscds.h>
 
 #include "../navierstokes.h"
 #include "../problems/stg_shur14.h"
@@ -38,17 +39,14 @@ PetscErrorCode CreateDM(MPI_Comm comm, ProblemData *problem, MatType mat_type, V
 }
 
 // Setup DM
-PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, SimpleBC bc, Physics phys) {
+PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, PetscInt q_extra, SimpleBC bc, Physics phys) {
+  PetscInt num_comp_q = 5;
   PetscFunctionBeginUser;
-  {
-    // Configure the finite element space and boundary conditions
-    PetscFE  fe;
-    PetscInt num_comp_q = 5;
-    DMLabel  label;
-    PetscCall(PetscFECreateLagrange(PETSC_COMM_SELF, problem->dim, num_comp_q, PETSC_FALSE, degree, PETSC_DECIDE, &fe));
-    PetscCall(PetscObjectSetName((PetscObject)fe, "Q"));
-    PetscCall(DMAddField(dm, NULL, (PetscObject)fe));
-    PetscCall(DMCreateDS(dm));
+
+  PetscCall(DMSetupByOrderBegin_FEM(PETSC_TRUE, PETSC_TRUE, degree, 1, q_extra, 1, &num_comp_q, dm));
+
+  {  // Add strong boundary conditions to DM
+    DMLabel label;
     PetscCall(DMGetLabel(dm, "Face Sets", &label));
     PetscCall(DMPlexLabelComplete(dm, label));
     // Set wall BCs
@@ -75,10 +73,9 @@ PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, SimpleBC bc
       PetscCall(PetscOptionsGetBool(NULL, NULL, "-stg_strong", &use_strongstg, NULL));
       if (use_strongstg) PetscCall(SetupStrongSTG(dm, bc, problem, phys));
     }
-
-    PetscCall(DMPlexSetClosurePermutationTensor(dm, PETSC_DETERMINE, NULL));
-    PetscCall(PetscFEDestroy(&fe));
   }
+
+  PetscCall(DMSetupByOrderEnd_FEM(PETSC_TRUE, dm));
 
   // Empty name for conserved field (because there is only one field)
   PetscSection section;
@@ -87,17 +84,17 @@ PetscErrorCode SetUpDM(DM dm, ProblemData *problem, PetscInt degree, SimpleBC bc
   switch (phys->state_var) {
     case STATEVAR_CONSERVATIVE:
       PetscCall(PetscSectionSetComponentName(section, 0, 0, "Density"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 1, "Momentum X"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 2, "Momentum Y"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 3, "Momentum Z"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 4, "Energy Density"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 1, "MomentumX"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 2, "MomentumY"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 3, "MomentumZ"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 4, "TotalEnergy"));
       break;
 
     case STATEVAR_PRIMITIVE:
       PetscCall(PetscSectionSetComponentName(section, 0, 0, "Pressure"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 1, "Velocity X"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 2, "Velocity Y"));
-      PetscCall(PetscSectionSetComponentName(section, 0, 3, "Velocity Z"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 1, "VelocityX"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 2, "VelocityY"));
+      PetscCall(PetscSectionSetComponentName(section, 0, 3, "VelocityZ"));
       PetscCall(PetscSectionSetComponentName(section, 0, 4, "Temperature"));
       break;
   }
@@ -119,11 +116,12 @@ PetscErrorCode VizRefineDM(DM dm, User user, ProblemData *problem, SimpleBC bc, 
     PetscCall(DMClearDS(dm_hierarchy[i + 1]));
     PetscCall(DMClearFields(dm_hierarchy[i + 1]));
     PetscCall(DMSetCoarseDM(dm_hierarchy[i + 1], dm_hierarchy[i]));
-    d = (d + 1) / 2;
+    d                = (d + 1) / 2;
+    PetscInt q_order = d + user->app_ctx->q_extra;
     if (i + 1 == user->app_ctx->viz_refine) d = 1;
     PetscCall(DMGetVecType(dm, &vec_type));
     PetscCall(DMSetVecType(dm_hierarchy[i + 1], vec_type));
-    PetscCall(SetUpDM(dm_hierarchy[i + 1], problem, d, bc, phys));
+    PetscCall(SetUpDM(dm_hierarchy[i + 1], problem, d, q_order, bc, phys));
     PetscCall(DMCreateInterpolation(dm_hierarchy[i], dm_hierarchy[i + 1], &interp_next, NULL));
     if (!i) user->interp_viz = interp_next;
     else {

@@ -49,11 +49,11 @@ The following options are common among all problem types:
   -
 
 * - `-problem`
-  - Problem to solve (`advection`, `advection2d`, `density_current`, or `euler_vortex`)
+  - Problem to solve (`advection`, `advection2d`, `density_current`, `euler_vortex`, `shocktube`, `blasius`, `channel`, `gaussian_wave`, and `taylor_green`)
   - `density_current`
 
 * - `-implicit`
-  - Use implicit time integartor formulation
+  - Use implicit time integrator formulation
   -
 
 * - `-degree`
@@ -159,6 +159,10 @@ The following options are common among all problem types:
 * - `-ts_monitor_wall_force`
   - Viewer for the force on each no-slip wall, e.g., `ascii:force.csv:ascii_csv` to write a CSV file.
   -
+
+* - `-mesh_transform`
+  - Transform the mesh, usually for an initial box mesh.
+  - `none`
 
 * - `-snes_view`
   - View PETSc `SNES` nonlinear solver configuration
@@ -618,9 +622,9 @@ For the Density Current, Channel, and Blasius problems, the following common com
   - `1004`
   - `J/(kg K)`
 
-* - `-g`
-  - Gravitational acceleration
-  - `9.81`
+* - `-gravity`
+  - Gravitational acceleration vector
+  - `0,0,0`
   - `m/s^2`
 
 * - `-lambda`
@@ -630,7 +634,7 @@ For the Density Current, Channel, and Blasius problems, the following common com
 
 * - `-mu`
   - Shear dynamic viscosity coefficient
-  - `75`
+  - `1.8e-5`
   -  `Pa s`
 
 * - `-k`
@@ -963,6 +967,11 @@ The Blasius problem has the following command-line options in addition to the Ne
   - `1.01E5`
   - `Pa`
 
+* - `-platemesh_modify_mesh`
+  - Whether to modify the mesh using the given options below.
+  - `false`
+  -
+
 * - `-platemesh_refine_height`
   - Height at which `-platemesh_Ndelta` number of elements should refined into
   - `5.9E-4`
@@ -983,14 +992,14 @@ The Blasius problem has the following command-line options in addition to the Ne
   - `5`
   - `degrees`
 
-* - `-stg_use`
-  - Whether to use stg for the inflow conditions
-  - `false`
-  -
-
 * - `-platemesh_y_node_locs_path`
   - Path to file with y node locations. If empty, will use mesh warping instead.
   - `""`
+  -
+
+* - `-stg_use`
+  - Whether to use STG for the inflow conditions
+  - `false`
   -
 
 * - `-n_chebyshev`

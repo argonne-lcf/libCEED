@@ -35,6 +35,53 @@ const CeedBasis CEED_BASIS_COLLOCATED = &ceed_basis_collocated;
 /// @{
 
 /**
+  @brief Compute Chebyshev polynomial values at a point
+
+  @param[in]  x           Coordinate to evaluate Chebyshev polynomials at
+  @param[in]  n           Number of Chebyshev polynomials to evaluate, n >= 2
+  @param[out] chebyshev_x Array of Chebyshev polynomial values
+
+  @return An error code: 0 - success, otherwise - failure
+
+  @ref Developer
+**/
+static int CeedChebyshevPolynomialsAtPoint(CeedScalar x, CeedInt n, CeedScalar *chebyshev_x) {
+  chebyshev_x[0] = 1.0;
+  chebyshev_x[1] = 2 * x;
+  for (CeedInt i = 2; i < n; i++) chebyshev_x[i] = 2 * x * chebyshev_x[i - 1] - chebyshev_x[i - 2];
+
+  return CEED_ERROR_SUCCESS;
+}
+
+/**
+  @brief Compute values of the derivative of Chebyshev polynomials at a point
+
+  @param[in]  x           Coordinate to evaluate derivative of Chebyshev polynomials at
+  @param[in]  n           Number of Chebyshev polynomials to evaluate, n >= 2
+  @param[out] chebyshev_x Array of Chebyshev polynomial derivative values
+
+  @return An error code: 0 - success, otherwise - failure
+
+  @ref Developer
+**/
+static int CeedChebyshevDerivativeAtPoint(CeedScalar x, CeedInt n, CeedScalar *chebyshev_dx) {
+  CeedScalar chebyshev_x[3];
+
+  chebyshev_x[1]  = 1.0;
+  chebyshev_x[2]  = 2 * x;
+  chebyshev_dx[0] = 0.0;
+  chebyshev_dx[1] = 2.0;
+  for (CeedInt i = 2; i < n; i++) {
+    chebyshev_x[0]  = chebyshev_x[1];
+    chebyshev_x[1]  = chebyshev_x[2];
+    chebyshev_x[2]  = 2 * x * chebyshev_x[1] - chebyshev_x[0];
+    chebyshev_dx[i] = 2 * x * chebyshev_dx[i - 1] + 2 * chebyshev_x[1] - chebyshev_dx[i - 2];
+  }
+
+  return CEED_ERROR_SUCCESS;
+}
+
+/**
   @brief Compute Householder reflection
 
   Computes A = (I - b v v^T) A, where A is an mxn matrix indexed as A[i*row + j*col]
@@ -112,9 +159,16 @@ static int CeedGivensRotation(CeedScalar *A, CeedScalar c, CeedScalar s, CeedTra
   @ref Developer
 **/
 static int CeedScalarView(const char *name, const char *fp_fmt, CeedInt m, CeedInt n, const CeedScalar *a, FILE *stream) {
+  if (m > 1) {
+    fprintf(stream, "  %s:\n", name);
+  } else {
+    char padded_name[12];
+
+    snprintf(padded_name, 11, "%s:", name);
+    fprintf(stream, "  %-10s", padded_name);
+  }
   for (CeedInt i = 0; i < m; i++) {
-    if (m > 1) fprintf(stream, "%12s[%" CeedInt_FMT "]:", name, i);
-    else fprintf(stream, "%12s:", name);
+    if (m > 1) fprintf(stream, "    [%" CeedInt_FMT "]", i);
     for (CeedInt j = 0; j < n; j++) fprintf(stream, fp_fmt, fabs(a[i * n + j]) > 1E-14 ? a[i * n + j] : 0);
     fputs("\n", stream);
   }
@@ -1288,13 +1342,13 @@ int CeedBasisView(CeedBasis basis, FILE *stream) {
   CeedInt          q_comp   = 0;
 
   // Print FE space and element topology of the basis
+  fprintf(stream, "CeedBasis in a %s on a %s element\n", CeedFESpaces[fe_space], CeedElemTopologies[topo]);
   if (basis->is_tensor_basis) {
-    fprintf(stream, "CeedBasis (%s on a %s element): dim=%" CeedInt_FMT " P=%" CeedInt_FMT " Q=%" CeedInt_FMT "\n", CeedFESpaces[fe_space],
-            CeedElemTopologies[topo], basis->dim, basis->P_1d, basis->Q_1d);
+    fprintf(stream, "  P: %" CeedInt_FMT "\n  Q: %" CeedInt_FMT "\n", basis->P_1d, basis->Q_1d);
   } else {
-    fprintf(stream, "CeedBasis (%s on a %s element): dim=%" CeedInt_FMT " P=%" CeedInt_FMT " Q=%" CeedInt_FMT "\n", CeedFESpaces[fe_space],
-            CeedElemTopologies[topo], basis->dim, basis->P, basis->Q);
+    fprintf(stream, "  P: %" CeedInt_FMT "\n  Q: %" CeedInt_FMT "\n", basis->P, basis->Q);
   }
+  fprintf(stream, "  dimension: %" CeedInt_FMT "\n  field components: %" CeedInt_FMT "\n", basis->dim, basis->num_comp);
   // Print quadrature data, interpolation/gradient/divergence/curl of the basis
   if (basis->is_tensor_basis) {  // tensor basis
     CeedCall(CeedScalarView("qref1d", "\t% 12.8f", 1, basis->Q_1d, basis->q_ref_1d, stream));
@@ -1431,6 +1485,9 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
                    (t_mode == CEED_NOTRANSPOSE && (v_length >= num_points * num_q_comp || u_length >= num_nodes * num_comp)));
       break;
     case CEED_EVAL_GRAD:
+      good_dims = ((t_mode == CEED_TRANSPOSE && (u_length >= num_points * num_q_comp * dim || v_length >= num_nodes * num_comp)) ||
+                   (t_mode == CEED_NOTRANSPOSE && (v_length >= num_points * num_q_comp * dim || u_length >= num_nodes * num_comp)));
+      break;
     case CEED_EVAL_NONE:
     case CEED_EVAL_WEIGHT:
     case CEED_EVAL_DIV:
@@ -1449,6 +1506,8 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
 
   // Default implementation
   CeedCheck(basis->is_tensor_basis, basis->ceed, CEED_ERROR_UNSUPPORTED, "Evaluation at arbitrary points only supported for tensor product bases");
+  CeedCheck(eval_mode == CEED_EVAL_INTERP || t_mode == CEED_NOTRANSPOSE, basis->ceed, CEED_ERROR_UNSUPPORTED, "%s evaluation only supported for %s",
+            CeedEvalModes[eval_mode], CeedTransposeModes[CEED_NOTRANSPOSE]);
   if (!basis->basis_chebyshev) {
     // Build matrix mapping from quadrature point values to Chebyshev coefficients
     CeedScalar       *tau, *C, *I, *chebyshev_coeffs_1d;
@@ -1459,13 +1518,7 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
     CeedCheck(P_1d > 0 && Q_1d > 0, basis->ceed, CEED_ERROR_INCOMPATIBLE, "Basis dimensions are malformed");
     CeedCall(CeedCalloc(Q_1d * Q_1d, &C));
     CeedCall(CeedBasisGetQRef(basis, &q_ref_1d));
-    for (CeedInt i = 0; i < Q_1d; i++) {
-      const CeedScalar x = q_ref_1d[i];
-
-      C[i * Q_1d + 0] = 1.0;
-      C[i * Q_1d + 1] = 2 * x;
-      for (CeedInt j = 2; j < Q_1d; j++) C[i * Q_1d + j] = 2 * x * C[i * Q_1d + j - 1] - C[i * Q_1d + j - 2];
-    }
+    for (CeedInt i = 0; i < Q_1d; i++) CeedCall(CeedChebyshevPolynomialsAtPoint(q_ref_1d[i], Q_1d, &C[i * Q_1d]));
 
     // Inverse of coefficient matrix
     CeedCall(CeedCalloc(Q_1d * Q_1d, &chebyshev_coeffs_1d));
@@ -1491,14 +1544,14 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
     CeedScalar       *chebyshev_interp_1d, *chebyshev_grad_1d, *chebyshev_q_weight_1d;
     const CeedScalar *interp_1d;
 
-    CeedCall(CeedCalloc(Q_1d * Q_1d, &chebyshev_interp_1d));
-    CeedCall(CeedCalloc(Q_1d * Q_1d, &chebyshev_grad_1d));
+    CeedCall(CeedCalloc(P_1d * Q_1d, &chebyshev_interp_1d));
+    CeedCall(CeedCalloc(P_1d * Q_1d, &chebyshev_grad_1d));
     CeedCall(CeedCalloc(Q_1d, &chebyshev_q_weight_1d));
     CeedCall(CeedBasisGetInterp1D(basis, &interp_1d));
     CeedCall(CeedMatrixMatrixMultiply(basis->ceed, chebyshev_coeffs_1d, interp_1d, chebyshev_interp_1d, Q_1d, P_1d, Q_1d));
 
     CeedCall(CeedVectorCreate(basis->ceed, num_comp * CeedIntPow(Q_1d, dim), &basis->vec_chebyshev));
-    CeedCall(CeedBasisCreateTensorH1(basis->ceed, dim, num_comp, Q_1d, Q_1d, chebyshev_interp_1d, chebyshev_grad_1d, q_ref_1d, chebyshev_q_weight_1d,
+    CeedCall(CeedBasisCreateTensorH1(basis->ceed, dim, num_comp, P_1d, Q_1d, chebyshev_interp_1d, chebyshev_grad_1d, q_ref_1d, chebyshev_q_weight_1d,
                                      &basis->basis_chebyshev));
 
     // Cleanup
@@ -1514,13 +1567,15 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
   // Create TensorContract object if needed, such as a basis from the GPU backends
   if (!basis->contract) {
     Ceed      ceed_ref;
-    CeedBasis basis_ref;
+    CeedBasis basis_ref = NULL;
 
     CeedCall(CeedInit("/cpu/self", &ceed_ref));
     // Only need matching tensor contraction dimensions, any type of basis will work
-    CeedCall(CeedBasisCreateTensorH1Lagrange(ceed_ref, dim, num_comp, Q_1d, Q_1d, CEED_GAUSS, &basis_ref));
-    CeedCall(CeedTensorContractReference(basis_ref->contract));
-    basis->contract = basis_ref->contract;
+    CeedCall(CeedBasisCreateTensorH1Lagrange(ceed_ref, dim, num_comp, P_1d, Q_1d, CEED_GAUSS, &basis_ref));
+    // Note - clang-tidy doesn't know basis_ref->contract must be valid here
+    CeedCheck(basis_ref && basis_ref->contract, basis->ceed, CEED_ERROR_UNSUPPORTED,
+              "Refrence CPU ceed failed to create a tensor contraction object");
+    CeedCall(CeedTensorContractReferenceCopy(basis_ref->contract, &basis->contract));
     CeedCall(CeedBasisDestroy(&basis_ref));
     CeedCall(CeedDestroy(&ceed_ref));
   }
@@ -1539,29 +1594,53 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
       CeedCall(CeedVectorGetArrayRead(basis->vec_chebyshev, CEED_MEM_HOST, &chebyshev_coeffs));
       CeedCall(CeedVectorGetArrayRead(x_ref, CEED_MEM_HOST, &x_array_read));
       CeedCall(CeedVectorGetArrayWrite(v, CEED_MEM_HOST, &v_array));
-      {
-        CeedScalar tmp[2][num_comp * CeedIntPow(Q_1d, dim)], chebyshev_x[Q_1d];
+      switch (eval_mode) {
+        case CEED_EVAL_INTERP: {
+          CeedScalar tmp[2][num_comp * CeedIntPow(Q_1d, dim)], chebyshev_x[Q_1d];
 
-        // ---- Values at point
-        for (CeedInt p = 0; p < num_points; p++) {
-          CeedInt pre = num_comp * CeedIntPow(Q_1d, dim - 1), post = 1;
+          // ---- Values at point
+          for (CeedInt p = 0; p < num_points; p++) {
+            CeedInt pre = num_comp * CeedIntPow(Q_1d, dim - 1), post = 1;
 
-          for (CeedInt d = dim - 1; d >= 0; d--) {
-            // ------ Compute Chebyshev polynomial values
-            {
-              const CeedScalar x = x_array_read[p * dim + d];
-
-              chebyshev_x[0] = 1.0;
-              chebyshev_x[1] = 2 * x;
-              for (CeedInt j = 2; j < Q_1d; j++) chebyshev_x[j] = 2 * x * chebyshev_x[j - 1] - chebyshev_x[j - 2];
+            // Note: stepping "backwards" through the tensor contractions to agree with the ordering of the Chebyshev coefficients
+            for (CeedInt d = dim - 1; d >= 0; d--) {
+              // ------ Tensor contract with current Chebyshev polynomial values
+              CeedCall(CeedChebyshevPolynomialsAtPoint(x_array_read[p * dim + d], Q_1d, chebyshev_x));
+              CeedCall(CeedTensorContractApply(basis->contract, pre, Q_1d, post, 1, chebyshev_x, t_mode, false,
+                                               d == (dim - 1) ? chebyshev_coeffs : tmp[d % 2], d == 0 ? &v_array[p * num_comp] : tmp[(d + 1) % 2]));
+              pre /= Q_1d;
+              post *= 1;
             }
-            // ------ Tensor contract
-            CeedCall(CeedTensorContractApply(basis->contract, pre, Q_1d, post, 1, chebyshev_x, t_mode, false,
-                                             d == (dim - 1) ? chebyshev_coeffs : tmp[d % 2], d == 0 ? &v_array[p * num_comp] : tmp[(d + 1) % 2]));
-            pre /= Q_1d;
-            post *= 1;
           }
+          break;
         }
+        case CEED_EVAL_GRAD: {
+          CeedScalar tmp[2][num_comp * CeedIntPow(Q_1d, dim)], chebyshev_x[Q_1d];
+
+          // ---- Values at point
+          for (CeedInt p = 0; p < num_points; p++) {
+            // Note: stepping "backwards" through the tensor contractions to agree with the ordering of the Chebyshev coefficients
+            // Dim**2 contractions, apply grad when pass == dim
+            for (CeedInt pass = dim - 1; pass >= 0; pass--) {
+              CeedInt pre = num_comp * CeedIntPow(Q_1d, dim - 1), post = 1;
+
+              for (CeedInt d = dim - 1; d >= 0; d--) {
+                // ------ Tensor contract with current Chebyshev polynomial values
+                if (pass == d) CeedCall(CeedChebyshevDerivativeAtPoint(x_array_read[p * dim + d], Q_1d, chebyshev_x));
+                else CeedCall(CeedChebyshevPolynomialsAtPoint(x_array_read[p * dim + d], Q_1d, chebyshev_x));
+                CeedCall(CeedTensorContractApply(basis->contract, pre, Q_1d, post, 1, chebyshev_x, t_mode, false,
+                                                 d == (dim - 1) ? chebyshev_coeffs : tmp[d % 2],
+                                                 d == 0 ? &v_array[p * num_comp * dim + pass] : tmp[(d + 1) % 2]));
+                pre /= Q_1d;
+                post *= 1;
+              }
+            }
+          }
+          break;
+        }
+        default:
+          // Nothing to do, this won't occur
+          break;
       }
       CeedCall(CeedVectorRestoreArrayRead(basis->vec_chebyshev, &chebyshev_coeffs));
       CeedCall(CeedVectorRestoreArrayRead(x_ref, &x_array_read));
@@ -1569,6 +1648,7 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
       break;
     }
     case CEED_TRANSPOSE: {
+      // Note: No switch on e_mode here because only CEED_EVAL_INTERP is supported at this time
       // Arbitrary points to nodes
       CeedScalar       *chebyshev_coeffs;
       const CeedScalar *u_array, *x_array_read;
@@ -1584,16 +1664,10 @@ int CeedBasisApplyAtPoints(CeedBasis basis, CeedInt num_points, CeedTransposeMod
         for (CeedInt p = 0; p < num_points; p++) {
           CeedInt pre = num_comp * 1, post = 1;
 
+          // Note: stepping "backwards" through the tensor contractions to agree with the ordering of the Chebyshev coefficients
           for (CeedInt d = dim - 1; d >= 0; d--) {
-            // ------ Compute Chebyshev polynomial values
-            {
-              const CeedScalar x = x_array_read[p * dim + d];
-
-              chebyshev_x[0] = 1.0;
-              chebyshev_x[1] = 2 * x;
-              for (CeedInt j = 2; j < Q_1d; j++) chebyshev_x[j] = 2 * x * chebyshev_x[j - 1] - chebyshev_x[j - 2];
-            }
-            // ------ Tensor contract
+            // ------ Tensor contract with current Chebyshev polynomial values
+            CeedCall(CeedChebyshevPolynomialsAtPoint(x_array_read[p * dim + d], Q_1d, chebyshev_x));
             CeedCall(CeedTensorContractApply(basis->contract, pre, 1, post, Q_1d, chebyshev_x, t_mode, p > 0 && d == 0,
                                              d == (dim - 1) ? &u_array[p * num_comp] : tmp[d % 2], d == 0 ? chebyshev_coeffs : tmp[(d + 1) % 2]));
             pre /= 1;

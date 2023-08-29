@@ -21,6 +21,7 @@
 #include <stdlib.h>
 
 #include "newtonian_state.h"
+#include "setupgeo_helpers.h"
 #include "stg_shur14_type.h"
 #include "utils.h"
 
@@ -90,13 +91,13 @@ CEED_QFUNCTION_HELPER void InterpolateProfile(const CeedScalar wall_dist, CeedSc
  *
  * Calculates q_n at a given distance to the wall
  *
- * @param[in]  kappa  nth wavenumber
- * @param[in]  dkappa Difference between wavenumbers
- * @param[in]  keta   Dissipation wavenumber
- * @param[in]  kcut   Mesh-induced cutoff wavenumber
- * @param[in]  ke     Energy-containing wavenumber
- * @param[in]  Ektot  Total turbulent kinetic energy of spectrum
- * @returns    qn     Spectrum coefficient
+ * @param[in]  kappa     nth wavenumber
+ * @param[in]  dkappa    Difference between wavenumbers
+ * @param[in]  keta      Dissipation wavenumber
+ * @param[in]  kcut      Mesh-induced cutoff wavenumber
+ * @param[in]  ke        Energy-containing wavenumber
+ * @param[in]  Ektot_inv Inverse of total turbulent kinetic energy of spectrum
+ * @returns    qn        Spectrum coefficient
  */
 CEED_QFUNCTION_HELPER CeedScalar Calc_qn(const CeedScalar kappa, const CeedScalar dkappa, const CeedScalar keta, const CeedScalar kcut,
                                          const CeedScalar ke, const CeedScalar Ektot_inv) {
@@ -232,8 +233,8 @@ CEED_QFUNCTION_HELPER void STGShur14_Calc_PrecompEktot(const CeedScalar X[3], co
 //
 // stg_data[0] = 1 / Ektot (inverse of total spectrum energy)
 CEED_QFUNCTION(Preprocess_STGShur14)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedScalar *const *out) {
-  const CeedScalar(*q_data_sur)[CEED_Q_VLA] = (const CeedScalar(*)[CEED_Q_VLA])in[0];
-  const CeedScalar(*x)[CEED_Q_VLA]          = (const CeedScalar(*)[CEED_Q_VLA])in[1];
+  const CeedScalar(*dXdx_q)[3][CEED_Q_VLA] = (const CeedScalar(*)[3][CEED_Q_VLA])in[0];
+  const CeedScalar(*x)[CEED_Q_VLA]         = (const CeedScalar(*)[CEED_Q_VLA])in[1];
 
   CeedScalar(*stg_data) = (CeedScalar(*))out[0];
 
@@ -254,8 +255,8 @@ CEED_QFUNCTION(Preprocess_STGShur14)(void *ctx, CeedInt Q, const CeedScalar *con
   CeedPragmaSIMD for (CeedInt i = 0; i < Q; i++) {
     const CeedScalar wall_dist  = x[1][i];
     const CeedScalar dXdx[2][3] = {
-        {q_data_sur[4][i], q_data_sur[5][i], q_data_sur[6][i]},
-        {q_data_sur[7][i], q_data_sur[8][i], q_data_sur[9][i]}
+        {dXdx_q[0][0][i], dXdx_q[0][1][i], dXdx_q[0][2][i]},
+        {dXdx_q[1][0][i], dXdx_q[1][1][i], dXdx_q[1][2][i]},
     };
 
     CeedScalar h[3];
@@ -280,8 +281,8 @@ CEED_QFUNCTION(Preprocess_STGShur14)(void *ctx, CeedInt Q, const CeedScalar *con
 // Extrude the STGInflow profile through out the domain for an initial condition
 CEED_QFUNCTION(ICsSTG)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedScalar *const *out) {
   // Inputs
-  const CeedScalar(*x)[CEED_Q_VLA]      = (const CeedScalar(*)[CEED_Q_VLA])in[0];
-  const CeedScalar(*q_data)[CEED_Q_VLA] = (const CeedScalar(*)[CEED_Q_VLA])in[1];
+  const CeedScalar(*x)[CEED_Q_VLA]    = (const CeedScalar(*)[CEED_Q_VLA])in[0];
+  const CeedScalar(*J)[3][CEED_Q_VLA] = (const CeedScalar(*)[3][CEED_Q_VLA])in[1];
 
   // Outputs
   CeedScalar(*q0)[CEED_Q_VLA] = (CeedScalar(*)[CEED_Q_VLA])out[0];
@@ -297,13 +298,9 @@ CEED_QFUNCTION(ICsSTG)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedSc
   const CeedScalar       nu     = stg_ctx->newtonian_ctx.mu / rho;
 
   CeedPragmaSIMD for (CeedInt i = 0; i < Q; i++) {
-    const CeedScalar x_i[3]     = {x[0][i], x[1][i], x[2][i]};
-    const CeedScalar dXdx[3][3] = {
-        {q_data[1][i], q_data[2][i], q_data[3][i]},
-        {q_data[4][i], q_data[5][i], q_data[6][i]},
-        {q_data[7][i], q_data[8][i], q_data[9][i]}
-    };
-
+    const CeedScalar x_i[3] = {x[0][i], x[1][i], x[2][i]};
+    CeedScalar       dXdx[3][3];
+    InvertMappingJacobian_3D(Q, i, J, dXdx, NULL);
     CeedScalar h[3];
     h[0] = dx;
     for (CeedInt j = 1; j < 3; j++) h[j] = 2 / sqrt(Square(dXdx[0][j]) + Square(dXdx[1][j]) + Square(dXdx[2][j]));
@@ -493,10 +490,10 @@ CEED_QFUNCTION(STGShur14_Inflow_Jacobian)(void *ctx, CeedInt Q, const CeedScalar
  * through the native PETSc `DMAddBoundary` -> `bcFunc` method.
  */
 CEED_QFUNCTION(STGShur14_Inflow_StrongQF)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedScalar *const *out) {
-  const CeedScalar(*q_data_sur)[CEED_Q_VLA] = (const CeedScalar(*)[CEED_Q_VLA])in[0];
-  const CeedScalar(*coords)[CEED_Q_VLA]     = (const CeedScalar(*)[CEED_Q_VLA])in[1];
-  const CeedScalar(*scale)                  = (const CeedScalar(*))in[2];
-  const CeedScalar(*stg_data)[CEED_Q_VLA]   = (const CeedScalar(*)[CEED_Q_VLA])in[3];
+  const CeedScalar(*dXdx_q)[3][CEED_Q_VLA] = (const CeedScalar(*)[3][CEED_Q_VLA])in[0];
+  const CeedScalar(*coords)[CEED_Q_VLA]    = (const CeedScalar(*)[CEED_Q_VLA])in[1];
+  const CeedScalar(*scale)                 = (const CeedScalar(*))in[2];
+  const CeedScalar(*inv_Ektotal)           = (const CeedScalar(*))in[3];
 
   CeedScalar(*bcval)[CEED_Q_VLA] = (CeedScalar(*)[CEED_Q_VLA])out[0];
 
@@ -513,8 +510,8 @@ CEED_QFUNCTION(STGShur14_Inflow_StrongQF)(void *ctx, CeedInt Q, const CeedScalar
   CeedPragmaSIMD for (CeedInt i = 0; i < Q; i++) {
     const CeedScalar x[]        = {coords[0][i], coords[1][i], coords[2][i]};
     const CeedScalar dXdx[2][3] = {
-        {q_data_sur[4][i], q_data_sur[5][i], q_data_sur[6][i]},
-        {q_data_sur[7][i], q_data_sur[8][i], q_data_sur[9][i]}
+        {dXdx_q[0][0][i], dXdx_q[0][1][i], dXdx_q[0][2][i]},
+        {dXdx_q[1][0][i], dXdx_q[1][1][i], dXdx_q[1][2][i]},
     };
 
     CeedScalar h[3];
@@ -524,7 +521,7 @@ CEED_QFUNCTION(STGShur14_Inflow_StrongQF)(void *ctx, CeedInt Q, const CeedScalar
     InterpolateProfile(coords[1][i], ubar, cij, &eps, &lt, stg_ctx);
     if (!mean_only) {
       if (1) {
-        STGShur14_Calc_PrecompEktot(x, time, ubar, cij, stg_data[0][i], h, x[1], eps, lt, nu, u, stg_ctx);
+        STGShur14_Calc_PrecompEktot(x, time, ubar, cij, inv_Ektotal[i], h, x[1], eps, lt, nu, u, stg_ctx);
       } else {  // Original way
         CeedScalar qn[STG_NMODES_MAX];
         CalcSpectrum(coords[1][i], eps, lt, h, nu, qn, stg_ctx);

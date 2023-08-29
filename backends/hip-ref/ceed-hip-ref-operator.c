@@ -40,7 +40,7 @@ static int CeedOperatorDestroy_Hip(CeedOperator op) {
   }
   CeedCallBackend(CeedFree(&impl->qvecsout));
 
-  // QFunction diagonal assembly data
+  // QFunction assembly data
   for (CeedInt i = 0; i < impl->qfnumactivein; i++) {
     CeedCallBackend(CeedVectorDestroy(&impl->qfactivein[i]));
   }
@@ -349,7 +349,7 @@ static int CeedOperatorApplyAdd_Hip(CeedOperator op, CeedVector invec, CeedVecto
   CeedVector          vec;
   CeedBasis           basis;
   CeedElemRestriction Erestrict;
-  CeedScalar         *edata[2 * CEED_FIELD_MAX];
+  CeedScalar         *edata[2 * CEED_FIELD_MAX] = {NULL};
 
   // Setup
   CeedCallBackend(CeedOperatorSetup_Hip(op));
@@ -453,8 +453,8 @@ static inline int CeedOperatorLinearAssembleQFunctionCore_Hip(CeedOperator op, b
   Ceed        ceed, ceedparent;
   CeedCallBackend(CeedOperatorGetCeed(op, &ceed));
   CeedCallBackend(CeedGetOperatorFallbackParentCeed(ceed, &ceedparent));
-  ceedparent = ceedparent ? ceedparent : ceed;
-  CeedScalar *edata[2 * CEED_FIELD_MAX];
+  ceedparent                            = ceedparent ? ceedparent : ceed;
+  CeedScalar *edata[2 * CEED_FIELD_MAX] = {NULL};
 
   // Setup
   CeedCallBackend(CeedOperatorSetup_Hip(op));
@@ -573,7 +573,7 @@ static int CeedOperatorLinearAssembleQFunction_Hip(CeedOperator op, CeedVector *
 }
 
 //------------------------------------------------------------------------------
-// Assemble Linear QFunction
+// Update Assembled Linear QFunction
 //------------------------------------------------------------------------------
 static int CeedOperatorLinearAssembleQFunctionUpdate_Hip(CeedOperator op, CeedVector assembled, CeedElemRestriction rstr, CeedRequest *request) {
   return CeedOperatorLinearAssembleQFunctionCore_Hip(op, false, &assembled, &rstr, request);
@@ -1080,7 +1080,7 @@ static int CeedSingleOperatorAssemble_Hip(CeedOperator op, CeedInt offset, CeedV
   }
 
   // Compute B^T D B
-  const CeedInt nelem         = impl->asmb->nelem;  // to satisfy clang-tidy
+  const CeedInt nelem         = impl->asmb->nelem;
   const CeedInt elemsPerBlock = impl->asmb->elemsPerBlock;
   const CeedInt grid          = nelem / elemsPerBlock + ((nelem / elemsPerBlock * elemsPerBlock < nelem) ? 1 : 0);
   void         *args[]        = {&impl->asmb->d_B_in, &impl->asmb->d_B_out, &qf_array, &values_array};
