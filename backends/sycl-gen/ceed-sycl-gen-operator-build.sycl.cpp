@@ -209,7 +209,8 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   if (dim != 3 || use_collograd_parallelization) {
     code << "#define CEED_Q_VLA 1\n\n";
   } else {
-    code << "#define CEED_Q_VLA " << Q_1d << "\n\n";
+    // code << "#define CEED_Q_VLA " << Q_1d << "\n\n";
+    code << "#define CEED_Q_VLA " << 1 << "\n\n";
   }
 
   // Determine subgroup size based on supported sizes : Default : 16 (if supported)
