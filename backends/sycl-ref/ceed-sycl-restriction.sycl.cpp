@@ -386,7 +386,7 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType mem_type, CeedCopyMode copy_mode,
   CeedCallBackend(CeedElemRestrictionSetELayout(r, layout));
 
   // Set up device indices/offset arrays
-  if (m_type == CEED_MEM_HOST) {
+  if (mem_type == CEED_MEM_HOST) {
     switch (copy_mode) {
       case CEED_OWN_POINTER:
         impl->h_ind_allocated = (CeedInt *)indices;
@@ -414,7 +414,7 @@ int CeedElemRestrictionCreate_Sycl(CeedMemType mem_type, CeedCopyMode copy_mode,
       CeedCallSycl(ceed, copy_event.wait_and_throw());
       CeedCallBackend(CeedElemRestrictionOffset_Sycl(r, indices));
     }
-  } else if (m_type == CEED_MEM_DEVICE) {
+  } else if (mem_type == CEED_MEM_DEVICE) {
     switch (copy_mode) {
       case CEED_COPY_VALUES:
         if (indices != NULL) {
