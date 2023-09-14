@@ -41,9 +41,10 @@ static inline int CeedQFunctionContextSyncH2D_Sycl(const CeedQFunctionContext ct
     CeedCallSycl(ceed, impl->d_data_owned = sycl::malloc_device(ctxsize, sycl_data->sycl_device, sycl_data->sycl_context));
     impl->d_data = impl->d_data_owned;
   }
-  // Order queue
-  sycl::event e          = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
-  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, impl->h_data, ctxsize, {e});
+  std::vector<sycl::event> e;
+  if (!sycl_data->sycl_queue.is_in_order()) e = {sycl_data->sycl_queue.ext_oneapi_submit_barrier()};
+
+  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, impl->h_data, ctxsize, e);
   CeedCallSycl(ceed, copy_event.wait_and_throw());
 
   return CEED_ERROR_SUCCESS;
@@ -78,9 +79,9 @@ static inline int CeedQFunctionContextSyncD2H_Sycl(const CeedQFunctionContext ct
     impl->h_data = impl->h_data_owned;
   }
 
-  // Order queue
-  sycl::event e          = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
-  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->h_data, impl->d_data, ctxsize, {e});
+  std::vector<sycl::event> e;
+  if (!sycl_data->sycl_queue.is_in_order()) e = {sycl_data->sycl_queue.ext_oneapi_submit_barrier()};
+  sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->h_data, impl->d_data, ctxsize, e);
   CeedCallSycl(ceed, copy_event.wait_and_throw());
 
   return CEED_ERROR_SUCCESS;
@@ -207,8 +208,8 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
   Ceed_Sycl *sycl_data;
   CeedCallBackend(CeedGetData(ceed, &sycl_data));
 
-  // Order queue
-  sycl::event e = sycl_data->sycl_queue.ext_oneapi_submit_barrier();
+  std::vector<sycl::event> e;
+  if (!sycl_data->sycl_queue.is_in_order()) e = {sycl_data->sycl_queue.ext_oneapi_submit_barrier()};
 
   // Wait for all work to finish before freeing memory
   if (impl->d_data_owned) {
@@ -224,7 +225,7 @@ static int CeedQFunctionContextSetDataDevice_Sycl(const CeedQFunctionContext ctx
       CeedCallSycl(ceed, impl->d_data_owned = sycl::malloc_device(ctxsize, sycl_data->sycl_device, sycl_data->sycl_context));
       impl->d_data_borrowed  = NULL;
       impl->d_data           = impl->d_data_owned;
-      sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, data, ctxsize, {e});
+      sycl::event copy_event = sycl_data->sycl_queue.memcpy(impl->d_data, data, ctxsize, e);
       CeedCallSycl(ceed, copy_event.wait_and_throw());
     } break;
     case CEED_OWN_POINTER: {
@@ -273,8 +274,8 @@ static int CeedQFunctionContextTakeData_Sycl(const CeedQFunctionContext ctx, con
   Ceed_Sycl *ceedSycl;
   CeedCallBackend(CeedGetData(ceed, &ceedSycl));
 
-  // Order queue
-  ceedSycl->sycl_queue.ext_oneapi_submit_barrier();
+  // Order queue if needed
+  if (!ceedSycl->sycl_queue.is_in_order()) ceedSycl->sycl_queue.ext_oneapi_submit_barrier();
 
   // Sync data to requested mem_type
   bool need_sync = false;

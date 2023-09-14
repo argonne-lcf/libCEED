@@ -40,15 +40,7 @@ static int CeedInit_Sycl_shared(const char *resource, Ceed ceed) {
 
   Ceed ceed_ref;
   CeedCallBackend(CeedInit(ref_resource.str().c_str(), &ceed_ref));
-
-  Ceed_Sycl *ref_data;
-  CeedCallBackend(CeedGetData(ceed_ref, &ref_data));
-
-  // Need to use the same queue everywhere for correct synchronization
-  ref_data->sycl_queue   = data->sycl_queue;
-  ref_data->sycl_context = data->sycl_context;
-  ref_data->sycl_device  = data->sycl_device;
-
+  CeedCallBackend(CeedSetStream_Sycl(ceed_ref,&(data->sycl_queue)));
   CeedCallBackend(CeedSetDelegate(ceed, ceed_ref));
 
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Ceed", ceed, "BasisCreateTensorH1", CeedBasisCreateTensorH1_Sycl_shared));
