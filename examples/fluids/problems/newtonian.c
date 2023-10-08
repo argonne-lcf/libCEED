@@ -85,7 +85,7 @@ PetscErrorCode NS_NEWTONIAN_IG(ProblemData *problem, DM dm, void *ctx, SimpleBC 
   //           Setup Generic Newtonian IG Problem
   // ------------------------------------------------------
   problem->dim                     = 3;
-  problem->q_data_size_vol         = 10;
+  problem->q_data_size_vol         = 11;
   problem->q_data_size_sur         = 10;
   problem->jac_data_size_sur       = 11;
   problem->setup_vol.qfunction     = Setup;

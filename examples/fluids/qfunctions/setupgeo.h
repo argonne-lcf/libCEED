@@ -13,6 +13,8 @@
 
 #include <ceed.h>
 #include <math.h>
+#include "utils.h"
+
 
 #include "setupgeo_helpers.h"
 
@@ -50,6 +52,7 @@
 CEED_QFUNCTION(Setup)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedScalar *const *out) {
   const CeedScalar(*J)[3][CEED_Q_VLA] = (const CeedScalar(*)[3][CEED_Q_VLA])in[0];
   const CeedScalar(*w)                = in[1];
+  const CeedScalar(*x)[CEED_Q_VLA]    = (const CeedScalar(*)[CEED_Q_VLA])in[2];
   CeedScalar(*q_data)[CEED_Q_VLA]     = (CeedScalar(*)[CEED_Q_VLA])out[0];
 
   CeedPragmaSIMD for (CeedInt i = 0; i < Q; i++) {
@@ -65,9 +68,17 @@ CEED_QFUNCTION(Setup)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedSca
     q_data[7][i] = dXdx[2][0];
     q_data[8][i] = dXdx[2][1];
     q_data[9][i] = dXdx[2][2];
+//    q_data[10][i]=LinearRampCoefficient(context->idl_amplitude, context->idl_length, context->idl_start    , x[0][i]);
+//  idl_decay_time: 3.6e-4
+//  idl_start: -3.1
+//  idl_length: 0.2
+    CeedScalar xo=x[i][0];
+    q_data[10][i]=LinearRampCoefficient(3.6e-4,0.2,-3.1, xo);
   }
+
   return 0;
 }
+
 
 // *****************************************************************************
 // This QFunction sets up the geometric factor required for integration when reference coordinates are in 2D and the physical coordinates are in 3D
