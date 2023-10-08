@@ -227,6 +227,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_rhs_vol, "q", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_rhs_vol, "Grad_q", num_comp_q * dim, CEED_EVAL_GRAD));
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_rhs_vol, "qdata", q_data_size_vol, CEED_EVAL_NONE));
+    PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_rhs_vol, "x", num_comp_x, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(ceed_data->qf_rhs_vol, "v", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(ceed_data->qf_rhs_vol, "Grad_v", num_comp_q * dim, CEED_EVAL_GRAD));
   }
@@ -240,6 +241,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_ifunction_vol, "Grad_q", num_comp_q * dim, CEED_EVAL_GRAD));
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_ifunction_vol, "q dot", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_ifunction_vol, "qdata", q_data_size_vol, CEED_EVAL_NONE));
+    PetscCallCeed(ceed, CeedQFunctionAddInput(ceed_data->qf_ifunction_vol, "x", num_comp_x, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(ceed_data->qf_ifunction_vol, "v", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(ceed_data->qf_ifunction_vol, "Grad_v", num_comp_q * dim, CEED_EVAL_GRAD));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(ceed_data->qf_ifunction_vol, "jac_data", jac_data_size_vol, CEED_EVAL_NONE));
@@ -253,6 +255,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedQFunctionAddInput(qf_ijacobian_vol, "dq", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddInput(qf_ijacobian_vol, "Grad_dq", num_comp_q * dim, CEED_EVAL_GRAD));
     PetscCallCeed(ceed, CeedQFunctionAddInput(qf_ijacobian_vol, "qdata", q_data_size_vol, CEED_EVAL_NONE));
+    PetscCallCeed(ceed, CeedQFunctionAddInput(qf_ijacobian_vol, "x", num_comp_x, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddInput(qf_ijacobian_vol, "jac_data", jac_data_size_vol, CEED_EVAL_NONE));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(qf_ijacobian_vol, "v", num_comp_q, CEED_EVAL_INTERP));
     PetscCallCeed(ceed, CeedQFunctionAddOutput(qf_ijacobian_vol, "Grad_v", num_comp_q * dim, CEED_EVAL_GRAD));
@@ -311,6 +314,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedOperatorSetField(op, "q", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_q", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "qdata", ceed_data->elem_restr_qd_i, CEED_BASIS_COLLOCATED, ceed_data->q_data));
+    PetscCallCeed(ceed, CeedOperatorSetField(op, "x", ceed_data->elem_restr_x, ceed_data->basis_x, ceed_data->x_coord));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     user->op_rhs_vol = op;
@@ -324,6 +328,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_q", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "q dot", ceed_data->elem_restr_q, ceed_data->basis_q, user->q_dot_ceed));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "qdata", ceed_data->elem_restr_qd_i, CEED_BASIS_COLLOCATED, ceed_data->q_data));
+    PetscCallCeed(ceed, CeedOperatorSetField(op, "x", ceed_data->elem_restr_x, ceed_data->basis_x, ceed_data->x_coord));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "jac_data", elem_restr_jd_i, CEED_BASIS_COLLOCATED, jac_data));
@@ -338,6 +343,7 @@ PetscErrorCode SetupLibceed(Ceed ceed, CeedData ceed_data, DM dm, User user, App
     PetscCallCeed(ceed, CeedOperatorSetField(op, "dq", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_dq", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "qdata", ceed_data->elem_restr_qd_i, CEED_BASIS_COLLOCATED, ceed_data->q_data));
+    PetscCallCeed(ceed, CeedOperatorSetField(op, "x", ceed_data->elem_restr_x, ceed_data->basis_x, ceed_data->x_coord));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "jac_data", elem_restr_jd_i, CEED_BASIS_COLLOCATED, jac_data));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
     PetscCallCeed(ceed, CeedOperatorSetField(op, "Grad_v", ceed_data->elem_restr_q, ceed_data->basis_q, CEED_VECTOR_ACTIVE));
