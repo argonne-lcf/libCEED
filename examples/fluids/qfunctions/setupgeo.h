@@ -70,10 +70,11 @@ CEED_QFUNCTION(Setup)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedSca
     q_data[9][i] = dXdx[2][2];
 //    q_data[10][i]=LinearRampCoefficient(context->idl_amplitude, context->idl_length, context->idl_start    , x[0][i]);
 //  idl_decay_time: 3.6e-4
+//  coeff needs 1/3.6e-4=2777.78
 //  idl_start: -3.1
 //  idl_length: 0.2
     CeedScalar xo=x[0][i];
-    q_data[10][i]=LinearRampCoefficient(3.6e-4,0.2,-3.1, xo);
+    q_data[10][i]=LinearRampCoefficient(2777.78,0.2,-3.1, xo);
   }
   return 0;
 }
