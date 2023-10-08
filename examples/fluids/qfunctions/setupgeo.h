@@ -72,13 +72,11 @@ CEED_QFUNCTION(Setup)(void *ctx, CeedInt Q, const CeedScalar *const *in, CeedSca
 //  idl_decay_time: 3.6e-4
 //  idl_start: -3.1
 //  idl_length: 0.2
-    CeedScalar xo=x[i][0];
+    CeedScalar xo=x[0][i];
     q_data[10][i]=LinearRampCoefficient(3.6e-4,0.2,-3.1, xo);
   }
-
   return 0;
 }
-
 
 // *****************************************************************************
 // This QFunction sets up the geometric factor required for integration when reference coordinates are in 2D and the physical coordinates are in 3D

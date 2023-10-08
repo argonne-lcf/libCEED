@@ -137,8 +137,8 @@ CEED_QFUNCTION(RHSFunction_Newtonian)(void *ctx, CeedInt Q, const CeedScalar *co
         {q_data[7][i], q_data[8][i], q_data[9][i]}
     };
     State grad_s[3];
-    CeedScalar dU[5];
     for (CeedInt k = 0; k < 3; k++) {
+      CeedScalar  dU[5];
       for (CeedInt j = 0; j < 5; j++) dU[j] = Grad_q[0][j][i] * dXdx[0][k] + Grad_q[1][j][i] * dXdx[1][k] + Grad_q[2][j][i] * dXdx[2][k];
       grad_s[k] = StateFromU_fwd(context, s, dU);
     }
