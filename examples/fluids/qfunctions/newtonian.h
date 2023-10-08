@@ -24,8 +24,6 @@ CEED_QFUNCTION_HELPER void InternalDampingLayer(const NewtonianIdealGasContext c
                                                 CeedScalar damp_residual[5]) {
   const CeedScalar sigma = LinearRampCoefficient(context->idl_amplitude, context->idl_length, context->idl_start, x_i[0]);
   ScaleN(damp_Y, sigma, 5);
-//  CeedScalar dx_i[3] = {0};
-//  State      damp_s  = StateFromY_fwd(context, s, damp_Y, x_i, dx_i);
   State      damp_s  = StateFromY_fwd(context, s, damp_Y);
 
   CeedScalar U[5];
@@ -140,8 +138,8 @@ CEED_QFUNCTION(RHSFunction_Newtonian)(void *ctx, CeedInt Q, const CeedScalar *co
         {q_data[7][i], q_data[8][i], q_data[9][i]}
     };
     State grad_s[3];
-    CeedScalar dU[5];
     for (CeedInt k = 0; k < 3; k++) {
+      CeedScalar  dU[5];
       for (CeedInt j = 0; j < 5; j++) dU[j] = Grad_q[0][j][i] * dXdx[0][k] + Grad_q[1][j][i] * dXdx[1][k] + Grad_q[2][j][i] * dXdx[2][k];
       grad_s[k] = StateFromU_fwd(context, s, dU);
     }
@@ -456,7 +454,7 @@ CEED_QFUNCTION_HELPER int BoundaryIntegral_Jacobian(void *ctx, CeedInt Q, const 
   const CeedScalar(*dq)[CEED_Q_VLA]           = (const CeedScalar(*)[CEED_Q_VLA])in[0];
   const CeedScalar(*Grad_dq)[5][CEED_Q_VLA]   = (const CeedScalar(*)[5][CEED_Q_VLA])in[1];
   const CeedScalar(*q_data_sur)[CEED_Q_VLA]   = (const CeedScalar(*)[CEED_Q_VLA])in[2];
-  const CeedScalar(*jac_data_sur)[CEED_Q_VLA] = (const CeedScalar(*)[CEED_Q_VLA])in[4];
+  const CeedScalar(*jac_data_sur)[CEED_Q_VLA] = (const CeedScalar(*)[CEED_Q_VLA])in[3];
 
   // Outputs
   CeedScalar(*v)[CEED_Q_VLA] = (CeedScalar(*)[CEED_Q_VLA])out[0];
