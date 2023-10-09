@@ -84,7 +84,11 @@ static inline int CeedVectorSyncD2H_Sycl(const CeedVector vec) {
   Ceed_Sycl *data;
   CeedCallBackend(CeedGetData(ceed, &data));
 
-  CeedCheck(impl->d_array, ceed, CEED_ERROR_BACKEND, "No valid device data to sync to host");
+      if (!impl->d_array) {
+    // LCOV_EXCL_START
+    return CeedError(ceed, CEED_ERROR_BACKEND, "No valid device data to sync to host");
+    // LCOV_EXCL_STOP
+  }
 
   CeedSize length;
   CeedCallBackend(CeedVectorGetLength(vec, &length));
@@ -306,15 +310,15 @@ static int CeedVectorSetArray_Sycl(const CeedVector vec, const CeedMemType mem_t
 //------------------------------------------------------------------------------
 // Set host array to value
 //------------------------------------------------------------------------------
-static int CeedHostSetValue_Sycl(CeedScalar *h_array, CeedSize length, CeedScalar val) {
-  for (CeedSize i = 0; i < length; i++) h_array[i] = val;
+static int CeedHostSetValue_Sycl(CeedScalar *h_array, CeedInt length, CeedScalar val) {
+  for (int i = 0; i < length; i++) h_array[i] = val;
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Set device array to value
 //------------------------------------------------------------------------------
-static int CeedDeviceSetValue_Sycl(sycl::queue &sycl_queue, CeedScalar *d_array, CeedSize length, CeedScalar val) {
+static int CeedDeviceSetValue_Sycl(sycl::queue &sycl_queue, CeedScalar *d_array, CeedInt length, CeedScalar val) {
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
   sycl_queue.fill(d_array, val, length, {e});
@@ -420,7 +424,6 @@ static int CeedVectorGetArrayCore_Sycl(const CeedVector vec, const CeedMemType m
 
   return CEED_ERROR_SUCCESS;
 }
-
 //------------------------------------------------------------------------------
 // Get read-only access to a vector via the specified mem_type
 //------------------------------------------------------------------------------
@@ -505,13 +508,15 @@ static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *no
     case CEED_NORM_2: {
       // Order queue
       sycl::event e            = data->sycl_queue.ext_oneapi_submit_barrier();
-      auto        sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>(), {sycl::property::reduction::initialize_to_identity{}});
+      auto        sumReduction = sycl::reduction(impl->reduction_norm, sycl::plus<>(),
+      {sycl::property::reduction::initialize_to_identity{}});
       data->sycl_queue.parallel_for(length, {e}, sumReduction, [=](sycl::id<1> i, auto &sum) { sum += (d_array[i] * d_array[i]); }).wait_and_throw();
     } break;
     case CEED_NORM_MAX: {
       // Order queue
       sycl::event e            = data->sycl_queue.ext_oneapi_submit_barrier();
-      auto        maxReduction = sycl::reduction(impl->reduction_norm, sycl::maximum<>(), {sycl::property::reduction::initialize_to_identity{}});
+      auto        maxReduction = sycl::reduction(impl->reduction_norm, sycl::maximum<>(),
+      {sycl::property::reduction::initialize_to_identity{}});
       data->sycl_queue.parallel_for(length, {e}, maxReduction, [=](sycl::id<1> i, auto &max) { max.combine(abs(d_array[i])); }).wait_and_throw();
     } break;
   }
@@ -527,8 +532,8 @@ static int CeedVectorNorm_Sycl(CeedVector vec, CeedNormType type, CeedScalar *no
 //------------------------------------------------------------------------------
 // Take reciprocal of a vector on host
 //------------------------------------------------------------------------------
-static int CeedHostReciprocal_Sycl(CeedScalar *h_array, CeedSize length) {
-  for (CeedSize i = 0; i < length; i++) {
+static int CeedHostReciprocal_Sycl(CeedScalar *h_array, CeedInt length) {
+  for (int i = 0; i < length; i++) {
     if (std::fabs(h_array[i]) > CEED_EPSILON) h_array[i] = 1. / h_array[i];
   }
   return CEED_ERROR_SUCCESS;
@@ -537,7 +542,7 @@ static int CeedHostReciprocal_Sycl(CeedScalar *h_array, CeedSize length) {
 //------------------------------------------------------------------------------
 // Take reciprocal of a vector on device
 //------------------------------------------------------------------------------
-static int CeedDeviceReciprocal_Sycl(sycl::queue &sycl_queue, CeedScalar *d_array, CeedSize length) {
+static int CeedDeviceReciprocal_Sycl(sycl::queue &sycl_queue, CeedScalar *d_array, CeedInt length) {
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
   sycl_queue.parallel_for(length, {e}, [=](sycl::id<1> i) {
@@ -569,15 +574,15 @@ static int CeedVectorReciprocal_Sycl(CeedVector vec) {
 //------------------------------------------------------------------------------
 // Compute x = alpha x on the host
 //------------------------------------------------------------------------------
-static int CeedHostScale_Sycl(CeedScalar *x_array, CeedScalar alpha, CeedSize length) {
-  for (CeedSize i = 0; i < length; i++) x_array[i] *= alpha;
+static int CeedHostScale_Sycl(CeedScalar *x_array, CeedScalar alpha, CeedInt length) {
+  for (int i = 0; i < length; i++) x_array[i] *= alpha;
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Compute x = alpha x on device
 //------------------------------------------------------------------------------
-static int CeedDeviceScale_Sycl(sycl::queue &sycl_queue, CeedScalar *x_array, CeedScalar alpha, CeedSize length) {
+static int CeedDeviceScale_Sycl(sycl::queue &sycl_queue, CeedScalar *x_array, CeedScalar alpha, CeedInt length) {
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
   sycl_queue.parallel_for(length, {e}, [=](sycl::id<1> i) { x_array[i] *= alpha; });
@@ -607,15 +612,15 @@ static int CeedVectorScale_Sycl(CeedVector x, CeedScalar alpha) {
 //------------------------------------------------------------------------------
 // Compute y = alpha x + y on the host
 //------------------------------------------------------------------------------
-static int CeedHostAXPY_Sycl(CeedScalar *y_array, CeedScalar alpha, CeedScalar *x_array, CeedSize length) {
-  for (CeedSize i = 0; i < length; i++) y_array[i] += alpha * x_array[i];
+static int CeedHostAXPY_Sycl(CeedScalar *y_array, CeedScalar alpha, CeedScalar *x_array, CeedInt length) {
+  for (int i = 0; i < length; i++) y_array[i] += alpha * x_array[i];
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Compute y = alpha x + y on device
 //------------------------------------------------------------------------------
-static int CeedDeviceAXPY_Sycl(sycl::queue &sycl_queue, CeedScalar *y_array, CeedScalar alpha, CeedScalar *x_array, CeedSize length) {
+static int CeedDeviceAXPY_Sycl(sycl::queue &sycl_queue, CeedScalar *y_array, CeedScalar alpha, CeedScalar *x_array, CeedInt length) {
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
   sycl_queue.parallel_for(length, {e}, [=](sycl::id<1> i) { y_array[i] += alpha * x_array[i]; });
@@ -652,15 +657,15 @@ static int CeedVectorAXPY_Sycl(CeedVector y, CeedScalar alpha, CeedVector x) {
 //------------------------------------------------------------------------------
 // Compute the pointwise multiplication w = x .* y on the host
 //------------------------------------------------------------------------------
-static int CeedHostPointwiseMult_Sycl(CeedScalar *w_array, CeedScalar *x_array, CeedScalar *y_array, CeedSize length) {
-  for (CeedSize i = 0; i < length; i++) w_array[i] = x_array[i] * y_array[i];
+static int CeedHostPointwiseMult_Sycl(CeedScalar *w_array, CeedScalar *x_array, CeedScalar *y_array, CeedInt length) {
+  for (int i = 0; i < length; i++) w_array[i] = x_array[i] * y_array[i];
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Compute the pointwise multiplication w = x .* y on device (impl in .cu file)
 //------------------------------------------------------------------------------
-static int CeedDevicePointwiseMult_Sycl(sycl::queue &sycl_queue, CeedScalar *w_array, CeedScalar *x_array, CeedScalar *y_array, CeedSize length) {
+static int CeedDevicePointwiseMult_Sycl(sycl::queue &sycl_queue, CeedScalar *w_array, CeedScalar *x_array, CeedScalar *y_array, CeedInt length) {
   // Order queue
   sycl::event e = sycl_queue.ext_oneapi_submit_barrier();
   sycl_queue.parallel_for(length, {e}, [=](sycl::id<1> i) { w_array[i] = x_array[i] * y_array[i]; });

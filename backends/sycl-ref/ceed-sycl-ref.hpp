@@ -44,18 +44,18 @@ typedef struct {
 } CeedElemRestriction_Sycl;
 
 typedef struct {
-  CeedInt       dim;
-  CeedInt       P_1d;
-  CeedInt       Q_1d;
-  CeedInt       num_comp;
-  CeedInt       num_nodes;
-  CeedInt       num_qpts;
-  CeedInt       buf_len;
-  CeedInt       op_len;
+  CeedInt     dim;
+  CeedInt     P_1d;
+  CeedInt     Q_1d;
+  CeedInt     num_comp;
+  CeedInt     num_nodes;
+  CeedInt     num_qpts;
+  CeedInt     buf_len;
+  CeedInt     op_len;
   SyclModule_t *sycl_module;
-  CeedScalar   *d_interp_1d;
-  CeedScalar   *d_grad_1d;
-  CeedScalar   *d_q_weight_1d;
+  CeedScalar *d_interp_1d;
+  CeedScalar *d_grad_1d;
+  CeedScalar *d_q_weight_1d;
 } CeedBasis_Sycl;
 
 typedef struct {
@@ -112,16 +112,25 @@ typedef struct {
   CeedOperatorAssemble_Sycl *asmb;
 } CeedOperator_Sycl;
 
+// CEED_INTERN int CeedSyclGetCublasHandle(Ceed ceed, cublasHandle_t *handle);
+
 CEED_INTERN int CeedVectorCreate_Sycl(CeedSize n, CeedVector vec);
+
+CEED_INTERN int CeedElemRestrictionCreate_Sycl(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, CeedElemRestriction r);
+
+CEED_INTERN int CeedElemRestrictionCreateBlocked_Sycl(const CeedMemType mem_type, const CeedCopyMode copy_mode, const CeedInt *indices,
+                                                      const CeedElemRestriction res);
+
+CEED_INTERN int CeedBasisApplyElems_Sycl(CeedBasis basis, const CeedInt num_elem, CeedTransposeMode t_mode, CeedEvalMode eval_mode,
+                                         const CeedVector u, CeedVector v);
+
+CEED_INTERN int CeedQFunctionApplyElems_Sycl(CeedQFunction qf, const CeedInt Q, const CeedVector *const u, const CeedVector *v);
 
 CEED_INTERN int CeedBasisCreateTensorH1_Sycl(CeedInt dim, CeedInt P_1d, CeedInt Q_1d, const CeedScalar *interp_1d, const CeedScalar *grad_1d,
                                              const CeedScalar *qref_1d, const CeedScalar *qweight_1d, CeedBasis basis);
 
-CEED_INTERN int CeedBasisCreateH1_Sycl(CeedElemTopology topo, CeedInt dim, CeedInt ndof, CeedInt nqpts, const CeedScalar *interp,
-                                       const CeedScalar *grad, const CeedScalar *qref, const CeedScalar *qweight, CeedBasis basis);
-
-CEED_INTERN int CeedElemRestrictionCreate_Sycl(CeedMemType mem_type, CeedCopyMode copy_mode, const CeedInt *indices, const bool *orients,
-                                               const CeedInt8 *curl_orients, CeedElemRestriction r);
+CEED_INTERN int CeedBasisCreateH1_Sycl(CeedElemTopology, CeedInt, CeedInt, CeedInt, const CeedScalar *, const CeedScalar *, const CeedScalar *,
+                                       const CeedScalar *, CeedBasis);
 
 CEED_INTERN int CeedQFunctionCreate_Sycl(CeedQFunction qf);
 

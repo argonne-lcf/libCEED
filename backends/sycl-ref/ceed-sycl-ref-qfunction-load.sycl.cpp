@@ -26,7 +26,7 @@
 //
 // TODO: Refactor
 //------------------------------------------------------------------------------
-extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
+extern "C" int CeedSyclBuildQFunction(CeedQFunction qf) {
   CeedQFunction_Sycl* impl;
   CeedCallBackend(CeedQFunctionGetData(qf, (void**)&impl));
   // QFunction is built
@@ -60,17 +60,17 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   CeedCallBackend(CeedQFunctionGetKernelName(qf, &qfunction_name));
 
   char* qfunction_source;
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source -----\n");
+  CeedDebug256(ceed, 2, "----- Loading QFunction User Source -----\n");
   CeedCallBackend(CeedQFunctionLoadSourceToBuffer(qf, &qfunction_source));
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source Complete! -----\n");
+  CeedDebug256(ceed, 2, "----- Loading QFunction User Source Complete! -----\n");
 
   char* read_write_kernel_path;
   CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-ref-qfunction.h", &read_write_kernel_path));
 
   char* read_write_kernel_source;
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction Read/Write Kernel Source -----\n");
+  CeedDebug256(ceed, 2, "----- Loading QFunction Read/Write Kernel Source -----\n");
   CeedCallBackend(CeedLoadSourceToBuffer(ceed, read_write_kernel_path, &read_write_kernel_source));
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction Read/Write Kernel Source Complete! -----\n");
+  CeedDebug256(ceed, 2, "----- Loading QFunction Read/Write Kernel Source Complete! -----\n");
 
   std::string_view  qf_name_view(qfunction_name);
   std::string_view  qf_source_view(qfunction_source);
@@ -86,8 +86,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // Kernel function
   // Here we are fixing a lower sub-group size value to avoid register spills
   // This needs to be revisited if all qfunctions require this.
-  code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) __kernel void " << kernel_name
-       << "(__global void *ctx, CeedInt Q,\n";
+  code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) __kernel void " << kernel_name << "(__global void *ctx, CeedInt Q,\n";
 
   // OpenCL doesn't allow for structs with pointers.
   // We will need to pass all of the arguments individually.
@@ -158,12 +157,12 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   code << "}\n";
 
   // View kernel for debugging
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "Generated QFunction Kernels:\n");
+  CeedDebug256(ceed, 2, "Generated QFunction Kernels:\n");
   CeedDebug(ceed, code.str().c_str());
 
   // Compile kernel
-  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, &impl->QFunction));
+  CeedCallBackend(CeedJitBuildModule_Sycl(ceed, code.str(), &impl->sycl_module));
+  CeedCallBackend(CeedJitGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, &impl->QFunction));
 
   // Cleanup
   CeedCallBackend(CeedFree(&qfunction_source));
@@ -172,5 +171,4 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
 
   return CEED_ERROR_SUCCESS;
 }
-
 //------------------------------------------------------------------------------

@@ -19,9 +19,12 @@
 //------------------------------------------------------------------------------
 static int CeedInit_Sycl_shared(const char *resource, Ceed ceed) {
   char *resource_root;
-  CeedCallBackend(CeedGetResourceRoot(ceed, resource, ":", &resource_root));
-  CeedCheck(!std::strcmp(resource_root, "/gpu/sycl/shared") || !std::strcmp(resource_root, "/cpu/sycl/shared"), ceed, CEED_ERROR_BACKEND,
-            "Sycl backend cannot use resource: %s", resource);
+  CeedCallBackend(CeedSyclGetResourceRoot(ceed, resource, &resource_root));
+  if (std::strcmp(resource_root, "/gpu/sycl/shared") && std::strcmp(resource_root, "/cpu/sycl/shared")) {
+    // LCOV_EXCL_START
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Sycl backend cannot use resource: %s", resource);
+    // LCOV_EXCL_STOP
+  }
   std::string_view root_view = resource_root;
 
   auto suffix_length = root_view.size() - root_view.rfind("shared");
@@ -32,23 +35,23 @@ static int CeedInit_Sycl_shared(const char *resource, Ceed ceed) {
 
   CeedCallBackend(CeedFree(&resource_root));
   CeedCallBackend(CeedSetDeterministic(ceed, true));
-
+  
   Ceed_Sycl *data;
   CeedCallBackend(CeedCalloc(1, &data));
   CeedCallBackend(CeedSetData(ceed, data));
-  CeedCallBackend(CeedInit_Sycl(ceed, resource));
+  CeedCallBackend(CeedSyclInit(ceed, resource));
 
   Ceed ceed_ref;
   CeedCallBackend(CeedInit(ref_resource.str().c_str(), &ceed_ref));
-
+  
   Ceed_Sycl *ref_data;
   CeedCallBackend(CeedGetData(ceed_ref, &ref_data));
-
+  
   // Need to use the same queue everywhere for correct synchronization
   ref_data->sycl_queue   = data->sycl_queue;
   ref_data->sycl_context = data->sycl_context;
   ref_data->sycl_device  = data->sycl_device;
-
+  
   CeedCallBackend(CeedSetDelegate(ceed, ceed_ref));
 
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Ceed", ceed, "BasisCreateTensorH1", CeedBasisCreateTensorH1_Sycl_shared));
@@ -64,5 +67,4 @@ CEED_INTERN int CeedRegister_Sycl_Shared(void) {
   CeedCallBackend(CeedRegister("/cpu/sycl/shared", CeedInit_Sycl_shared, 35));
   return CEED_ERROR_SUCCESS;
 }
-
 //------------------------------------------------------------------------------

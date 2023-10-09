@@ -12,9 +12,21 @@
 #include <sycl/sycl.hpp>
 
 //------------------------------------------------------------------------------
+// Get root resource without device spec
+//------------------------------------------------------------------------------
+int CeedSyclGetResourceRoot(Ceed ceed, const char *resource, char **resource_root) {
+  const char *device_spec       = std::strstr(resource, ":device_id=");
+  size_t      resource_root_len = device_spec ? (size_t)(device_spec - resource) + 1 : strlen(resource) + 1;
+  CeedCallBackend(CeedCalloc(resource_root_len, resource_root));
+  memcpy(*resource_root, resource, resource_root_len - 1);
+
+  return CEED_ERROR_SUCCESS;
+}
+
+//------------------------------------------------------------------------------
 // Device information backend init
 //------------------------------------------------------------------------------
-int CeedInit_Sycl(Ceed ceed, const char *resource) {
+int CeedSyclInit(Ceed ceed, const char *resource) {
   const char *device_spec = std::strstr(resource, ":device_id=");
   const int   device_id   = (device_spec) ? atoi(device_spec + 11) : 0;
 
@@ -88,39 +100,31 @@ int CeedDestroy_Sycl(Ceed ceed) {
 //------------------------------------------------------------------------------
 // Use an external queue
 //------------------------------------------------------------------------------
-int CeedSetStream_Sycl(Ceed ceed, void *handle) {
+int CeedSetStream_Sycl(Ceed ceed, void* handle) {
   Ceed_Sycl *data;
   CeedCallBackend(CeedGetData(ceed, &data));
 
-  CeedCheck(handle, ceed, CEED_ERROR_BACKEND, "Stream handle is null");
-  sycl::queue *q = static_cast<sycl::queue *>(handle);
+  if (!handle) {
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Stream handle is null");;
+  }
+  sycl::queue* q = static_cast<sycl::queue*>(handle);
 
   // Ensure we are using the expected device
-  CeedCheck(data->sycl_device == q->get_device(), ceed, CEED_ERROR_BACKEND, "Device mismatch between provided queue and ceed object");
-  data->sycl_device  = q->get_device();
+  if (data->sycl_device != q->get_device()) {
+    return CeedError(ceed, CEED_ERROR_BACKEND, "Device mismatch between provided queue and ceed object");;
+  }
+  data->sycl_device = q->get_device();
   data->sycl_context = q->get_context();
-  data->sycl_queue   = *q;
+  data->sycl_queue = *q;
 
   // Revisit this when we have a hierarchy of delegates
-  Ceed ceed_delegate = NULL;
-  CeedCallBackend(CeedGetDelegate(ceed, &ceed_delegate));
-  if (ceed_delegate) {
+  Ceed ceed_delegate;
+  if(!CeedGetDelegate(ceed,&ceed_delegate)) {
     Ceed_Sycl *delegate_data;
     CeedCallBackend(CeedGetData(ceed_delegate, &delegate_data));
-    delegate_data->sycl_device  = q->get_device();
+    delegate_data->sycl_device = q->get_device();
     delegate_data->sycl_context = q->get_context();
-    delegate_data->sycl_queue   = *q;
-  }
-
-  // Set queue and context for Ceed Fallback object
-  Ceed ceed_fallback = NULL;
-  CeedGetOperatorFallbackCeed(ceed, &ceed_fallback);
-  if (ceed_fallback) {
-    Ceed_Sycl *fallback_data;
-    CeedCallBackend(CeedGetData(ceed_fallback, &fallback_data));
-    fallback_data->sycl_device  = q->get_device();
-    fallback_data->sycl_context = q->get_context();
-    fallback_data->sycl_queue   = *q;
+    delegate_data->sycl_queue = *q;
   }
 
   return CEED_ERROR_SUCCESS;

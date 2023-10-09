@@ -33,7 +33,7 @@ static int CeedOperatorApplyAdd_Sycl_gen(CeedOperator op, CeedVector input_vec, 
   CeedCallBackend(CeedGetData(ceed, &ceed_Sycl));
   CeedOperator_Sycl_gen *impl;
   CeedCallBackend(CeedOperatorGetData(op, &impl));
-  CeedQFunction           qf;
+  CeedQFunction          qf;
   CeedQFunction_Sycl_gen *qf_impl;
   CeedCallBackend(CeedOperatorGetQFunction(op, &qf));
   CeedCallBackend(CeedQFunctionGetData(qf, &qf_impl));
@@ -47,7 +47,7 @@ static int CeedOperatorApplyAdd_Sycl_gen(CeedOperator op, CeedVector input_vec, 
   CeedVector   vec, output_vecs[CEED_FIELD_MAX] = {};
 
   // Creation of the operator
-  CeedCallBackend(CeedOperatorBuildKernel_Sycl_gen(op));
+  CeedCallBackend(CeedSyclGenOperatorBuild(op));
 
   // Input vectors
   for (CeedInt i = 0; i < num_input_fields; i++) {
@@ -92,36 +92,38 @@ static int CeedOperatorApplyAdd_Sycl_gen(CeedOperator op, CeedVector input_vec, 
   CeedCallBackend(CeedQFunctionGetInnerContextData(qf, CEED_MEM_DEVICE, &qf_impl->d_c));
 
   // Apply operator
-  const CeedInt dim  = impl->dim;
-  const CeedInt Q_1d = impl->Q_1d;
-  const CeedInt P_1d = impl->max_P_1d;
+  const CeedInt dim       = impl->dim;
+  const CeedInt Q_1d      = impl->Q_1d;
+  const CeedInt P_1d      = impl->max_P_1d;
+  const CeedInt thread_1d = CeedIntMax(Q_1d, P_1d);
   CeedInt       block_sizes[3], grid = 0;
   CeedCallBackend(BlockGridCalculate_Sycl_gen(dim, P_1d, Q_1d, block_sizes));
   if (dim == 1) {
-    grid = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
-    // CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
+    grid      = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
+    //CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
   } else if (dim == 2) {
-    grid = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
-    // CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
+    grid      = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
+    //CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
   } else if (dim == 3) {
-    grid = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
-    // CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
+    grid      = num_elem / block_sizes[2] + ((num_elem / block_sizes[2] * block_sizes[2] < num_elem) ? 1 : 0);
+    //CeedCallBackend(CeedRunKernelDimSharedSycl(ceed, impl->op, grid, block_sizes[0], block_sizes[1], block_sizes[2], sharedMem, opargs));
   }
 
-  sycl::range<3>    local_range(block_sizes[2], block_sizes[1], block_sizes[0]);
-  sycl::range<3>    global_range(grid * block_sizes[2], block_sizes[1], block_sizes[0]);
-  sycl::nd_range<3> kernel_range(global_range, local_range);
-
+  sycl::range<3> local_range(block_sizes[2], block_sizes[1], block_sizes[0]);
+  sycl::range<3> global_range(grid*block_sizes[2], block_sizes[1], block_sizes[0]);
+  sycl::nd_range<3> kernel_range(global_range,local_range);
+  
   //-----------
-  // Order queue
+  //Order queue
   sycl::event e = ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier();
-
-  CeedCallSycl(ceed, ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+  
+  CeedCallSycl(ceed,
+  ceed_Sycl->sycl_queue.submit([&](sycl::handler& cgh){
     cgh.depends_on(e);
     cgh.set_args(num_elem, qf_impl->d_c, impl->indices, impl->fields, impl->B, impl->G, impl->W);
-    cgh.parallel_for(kernel_range, *(impl->op));
+    cgh.parallel_for(kernel_range,*(impl->op));
   }));
-  CeedCallSycl(ceed, ceed_Sycl->sycl_queue.wait_and_throw());
+  CeedCallSycl(ceed,ceed_Sycl->sycl_queue.wait_and_throw());
 
   // Restore input arrays
   for (CeedInt i = 0; i < num_input_fields; i++) {
@@ -174,15 +176,14 @@ int CeedOperatorCreate_Sycl_gen(CeedOperator op) {
   CeedCallBackend(CeedCalloc(1, &impl));
   CeedCallBackend(CeedOperatorSetData(op, impl));
 
-  impl->indices = sycl::malloc_device<FieldsInt_Sycl>(1, sycl_data->sycl_device, sycl_data->sycl_context);
-  impl->fields  = sycl::malloc_host<Fields_Sycl>(1, sycl_data->sycl_context);
-  impl->B       = sycl::malloc_device<Fields_Sycl>(1, sycl_data->sycl_device, sycl_data->sycl_context);
-  impl->G       = sycl::malloc_device<Fields_Sycl>(1, sycl_data->sycl_device, sycl_data->sycl_context);
-  impl->W       = sycl::malloc_device<CeedScalar>(1, sycl_data->sycl_device, sycl_data->sycl_context);
+  impl->indices = sycl::malloc_device<FieldsInt_Sycl>(1,sycl_data->sycl_device,sycl_data->sycl_context);
+  impl->fields = sycl::malloc_host<Fields_Sycl>(1,sycl_data->sycl_context);
+  impl->B = sycl::malloc_device<Fields_Sycl>(1,sycl_data->sycl_device,sycl_data->sycl_context);
+  impl->G = sycl::malloc_device<Fields_Sycl>(1,sycl_data->sycl_device,sycl_data->sycl_context);
+  impl->W = sycl::malloc_device<CeedScalar>(1,sycl_data->sycl_device,sycl_data->sycl_context);
 
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Operator", op, "ApplyAdd", CeedOperatorApplyAdd_Sycl_gen));
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "Operator", op, "Destroy", CeedOperatorDestroy_Sycl_gen));
   return CEED_ERROR_SUCCESS;
 }
-
 //------------------------------------------------------------------------------

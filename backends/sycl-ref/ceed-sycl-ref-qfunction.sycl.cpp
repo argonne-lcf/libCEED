@@ -28,7 +28,7 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   CeedCallBackend(CeedQFunctionGetData(qf, &impl));
 
   // Build and compile kernel, if not done
-  if (!impl->QFunction) CeedCallBackend(CeedQFunctionBuildKernel_Sycl(qf));
+  if (!impl->QFunction) CeedCallBackend(CeedSyclBuildQFunction(qf));
 
   Ceed ceed;
   CeedCallBackend(CeedQFunctionGetCeed(qf, &ceed));
@@ -80,8 +80,8 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
     // Hard-coding the work-group size for now
     // We could use the Level Zero API to query and set an appropriate size in future
     // Equivalent of CUDA Occupancy Calculator
-    int               wg_size   = WG_SIZE_QF;
-    sycl::range<1>    rounded_Q = ((Q + (wg_size - 1)) / wg_size) * wg_size;
+    int wg_size = WG_SIZE_QF;
+    sycl::range<1> rounded_Q = ((Q + (wg_size- 1)) / wg_size) * wg_size;
     sycl::nd_range<1> kernel_range(rounded_Q, wg_size);
     cgh.parallel_for(kernel_range, *(impl->QFunction));
   });
@@ -139,5 +139,4 @@ int CeedQFunctionCreate_Sycl(CeedQFunction qf) {
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "QFunction", qf, "Destroy", CeedQFunctionDestroy_Sycl));
   return CEED_ERROR_SUCCESS;
 }
-
 //------------------------------------------------------------------------------
