@@ -106,33 +106,6 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
     }
   }
 
-  std::ostringstream code;
-  // TODO: generalize to accept different device functions?
-  {
-    char *tensor_basis_kernel_path, *tensor_basis_code;
-
-    CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-shared-basis-tensor-templates.h", &tensor_basis_kernel_path));
-    CeedDebug256(ceed, 2, "----- Loading Tensor Basis Kernel Source -----\n");
-    CeedCallBackend(CeedLoadSourceToBuffer(ceed, tensor_basis_kernel_path, &tensor_basis_code));
-    code << tensor_basis_code;
-    CeedCallBackend(CeedFree(&tensor_basis_kernel_path));
-    CeedCallBackend(CeedFree(&tensor_basis_code));
-  }
-  {
-    char *sycl_gen_template_path, *sycl_gen_template_source;
-
-    CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-gen-templates.h", &sycl_gen_template_path));
-    CeedDebug256(ceed, 2, "----- Loading Sycl-Gen Template Source -----\n");
-    CeedCallBackend(CeedLoadSourceToBuffer(ceed, sycl_gen_template_path, &sycl_gen_template_source));
-    code << sycl_gen_template_source;
-    CeedCallBackend(CeedFree(&sycl_gen_template_path));
-    CeedCallBackend(CeedFree(&sycl_gen_template_source));
-  }
-
-  std::string_view  q_function_source(qf_impl->q_function_source);
-  std::string_view  q_function_name(qf_impl->q_function_name);
-  const std::string operator_name = "CeedKernelSyclGenOperator_" + std::string(q_function_name);
-
   // Find dim, P_1d, Q_1d
   impl->max_P_1d = 0;
   for (CeedInt i = 0; i < num_input_fields; i++) {
@@ -213,6 +186,81 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   CeedInt block_sizes[3];
   CeedCallBackend(BlockGridCalculate_Sycl_gen(dim, P_1d, Q_1d, block_sizes));
 
+  std::string_view  q_function_source(qf_impl->q_function_source);
+  std::string_view  q_function_name(qf_impl->q_function_name);
+  const std::string operator_name = "CeedKernelSyclGenOperator_" + std::string(q_function_name);
+
+  // std::cout << "\nOperator : " << operator_name << ":\n";  
+  // Defining basis value as macro
+  CeedInt P_1D_const = 0, P_1D_field;
+  bool is_single_basis = true;  // Assumes single basis mode by default
+  for (CeedInt i = 0; i < num_input_fields; i++) {
+    // Get elem_size, eval_mode, num_comp
+    CeedCallBackend(CeedQFunctionFieldGetEvalMode(qf_input_fields[i], &eval_mode));
+    // Set field constants
+    if (eval_mode != CEED_EVAL_WEIGHT) {
+      CeedCallBackend(CeedOperatorFieldGetBasis(op_input_fields[i], &basis));
+      if (basis != CEED_BASIS_NONE) {
+        CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
+        P_1D_field = P_1d;
+      } else {
+        P_1D_field = Q_1d ;
+      }
+      if (i == 0) P_1D_const = P_1D_field;
+      if (P_1D_field != P_1D_const) is_single_basis = false;
+      // std::cout << " Input field " << i << " : P_1d = " << P_1D_field << "\n";
+    }
+  }
+  for (CeedInt i = 0; i < num_output_fields; i++) {
+    // Get elem_size, eval_mode, num_comp
+    CeedCallBackend(CeedQFunctionFieldGetEvalMode(qf_output_fields[i], &eval_mode));
+    // Set field constants
+    if (eval_mode != CEED_EVAL_WEIGHT) {
+      CeedCallBackend(CeedOperatorFieldGetBasis(op_output_fields[i], &basis));
+      if (basis != CEED_BASIS_NONE) {
+        CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
+        P_1D_field = P_1d;
+      } else {
+        P_1D_field = Q_1d ;
+      }
+      if (P_1D_field != P_1D_const) is_single_basis = false;
+      // std::cout << " Output field " << i << " : P_1d = " << P_1D_field << "\n";
+    }
+  }
+  std::cout << " Operator : " << operator_name << (is_single_basis ? " - Single Basis" : " - Non-single Basis") << "\n";
+  // code << "#define P_1D_const " << P_1D_const <<"\n\n";
+
+  std::ostringstream code;
+  // TODO: generalize to accept different device functions?
+  {
+    char *tensor_basis_kernel_path, *tensor_basis_code;
+
+    if(is_single_basis) {
+      CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-shared-basis-tensor-templates-const.h", &tensor_basis_kernel_path));
+    } else {
+      CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-shared-basis-tensor-templates.h", &tensor_basis_kernel_path));
+    }
+    CeedDebug256(ceed, 2, "----- Loading Tensor Basis Kernel Source -----\n");
+    CeedCallBackend(CeedLoadSourceToBuffer(ceed, tensor_basis_kernel_path, &tensor_basis_code));
+    code << tensor_basis_code;
+    CeedCallBackend(CeedFree(&tensor_basis_kernel_path));
+    CeedCallBackend(CeedFree(&tensor_basis_code));
+  }
+  {
+    char *sycl_gen_template_path, *sycl_gen_template_source;
+
+    if(is_single_basis) {
+      CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-gen-templates-const.h", &sycl_gen_template_path));
+    } else {
+      CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-gen-templates.h", &sycl_gen_template_path));
+    }
+    CeedDebug256(ceed, 2, "----- Loading Sycl-Gen Template Source -----\n");
+    CeedCallBackend(CeedLoadSourceToBuffer(ceed, sycl_gen_template_path, &sycl_gen_template_source));
+    code << sycl_gen_template_source;
+    CeedCallBackend(CeedFree(&sycl_gen_template_path));
+    CeedCallBackend(CeedFree(&sycl_gen_template_source));
+  }
+
   // Define CEED_Q_VLA
   code << "\n#undef CEED_Q_VLA\n";
   if (dim != 3 || use_collograd_parallelization) {
@@ -252,6 +300,41 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
       code << "  global const CeedScalar* d_u_" << i << " = fields->inputs[" << i << "];\n";
     }
   }
+
+  // CeedInt P_1D_const = 0;
+  // std::cout << "\n Operator : " << operator_name << "\n\n";
+  // for (CeedInt i = 0; i < num_input_fields; i++) {
+  //   // Get elem_size, eval_mode, num_comp
+  //   CeedCallBackend(CeedQFunctionFieldGetEvalMode(qf_input_fields[i], &eval_mode));
+  //   // Set field constants
+  //   if (eval_mode != CEED_EVAL_WEIGHT) {
+  //     CeedCallBackend(CeedOperatorFieldGetBasis(op_input_fields[i], &basis));
+  //     if (basis != CEED_BASIS_NONE) {
+  //       CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
+  //       P_1D_const = P_1d;
+  //     } else {
+  //       P_1D_const = Q_1d ;
+  //     }
+  //   }
+  //   std::cout << " Input field " << i << " : P_1d = " << P_1D_const << "\n";
+  // }
+
+  // P_1D_const = 0;
+  // for (CeedInt i = 0; i < num_output_fields; i++) {
+  //   // Get elem_size, eval_mode, num_comp
+  //   CeedCallBackend(CeedQFunctionFieldGetEvalMode(qf_output_fields[i], &eval_mode));
+  //   // Set field constants
+  //   if (eval_mode != CEED_EVAL_WEIGHT) {
+  //     CeedCallBackend(CeedOperatorFieldGetBasis(op_output_fields[i], &basis));
+  //     if (basis != CEED_BASIS_NONE) {
+  //       CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
+  //       P_1D_const = P_1d;
+  //     } else {
+  //       P_1D_const = Q_1d ;
+  //     }
+  //   }
+  //   std::cout << " Output field " << i << " : P_1d = " << P_1D_const << "\n";
+  // }
 
   for (CeedInt i = 0; i < num_output_fields; i++) {
     code << "  global CeedScalar* d_v_" << i << " = fields->outputs[" << i << "];\n";
@@ -759,6 +842,8 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   jit_constants["GROUP_SIZE_X"] = block_sizes[0];
   jit_constants["GROUP_SIZE_Y"] = block_sizes[1];
   jit_constants["GROUP_SIZE_Z"] = block_sizes[2];
+  jit_constants["P_1D_const"]   = P_1D_const;
+  jit_constants["Q_1D_const"]   = impl->Q_1d;
 
   // Compile kernel into a kernel bundle
   CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module, jit_constants));
