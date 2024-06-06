@@ -16,10 +16,8 @@
 #include <sstream>
 #include <sycl/sycl.hpp>
 
-#include "./online_compiler.hpp"
 #include "ceed-sycl-common.hpp"
-
-using ByteVector_t = std::vector<unsigned char>;
+#include "libprtc/prtc.h"
 
 //------------------------------------------------------------------------------
 // Add defined constants at the beginning of kernel source
@@ -61,111 +59,80 @@ static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_sourc
 // TODO: Add architecture flags, optimization flags
 //------------------------------------------------------------------------------
 static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
+
   flags = {std::string("-cl-std=CL3.0"), std::string("-Dint32_t=int")};
+  
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
-// Compile an OpenCL source to SPIR-V using Intel's online compiler extension
+// Compile sycl source to a shared library
 //------------------------------------------------------------------------------
-static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_device, const std::string &opencl_source, ByteVector_t &il_binary,
+static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_device, const std::string &kernel_source, std::string& output_path,
                                             const std::vector<std::string> &flags = {}) {
-  sycl::ext::libceed::online_compiler<sycl::ext::libceed::source_language::opencl_c> compiler(sycl_device);
+  
+  // Q: Should we write the kernel source string to a file here
+  //    or handle this in a separarte function;
 
-  try {
-    il_binary = compiler.compile(opencl_source, flags);
-  } catch (sycl::ext::libceed::online_compile_error &e) {
-    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
-  }
+  // Should outputfile name be generated here?
+
+  // TODO: Get compiler-path and flags from env or some other means
+  prtc::ShellCompiler compiler("icpx","-o","-c","-fPIC","-shared");
+  const auto [success, message] = compiler.compileAndLink(kernel_source,output_path,flags);
+  // Q: Should we always output the compiler output in verbose/debug mode?
+  if (!success) return CeedError((ceed), CEED_ERROR_BACKEND, message);
   return CEED_ERROR_SUCCESS;
 }
 
 // ------------------------------------------------------------------------------
 // Load (compile) SPIR-V source and wrap in sycl kernel_bundle
 // ------------------------------------------------------------------------------
-static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, const sycl::device &sycl_device, const ByteVector_t &il_binary,
-                               SyclModule_t **sycl_module) {
-  auto lz_context = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(sycl_context);
-  auto lz_device  = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(sycl_device);
-
-  ze_module_desc_t lz_mod_desc = {ZE_STRUCTURE_TYPE_MODULE_DESC,
-                                  nullptr,  // extension specific structs
-                                  ZE_MODULE_FORMAT_IL_SPIRV,
-                                  il_binary.size(),
-                                  il_binary.data(),
-                                  " -ze-opt-large-register-file",  // flags
-                                  nullptr};                        // specialization constants
-
-  ze_module_handle_t           lz_module;
-  ze_module_build_log_handle_t lz_log;
-  ze_result_t                  lz_err = zeModuleCreate(lz_context, lz_device, &lz_mod_desc, &lz_module, &lz_log);
-
-  if (ZE_RESULT_SUCCESS != lz_err) {
-    size_t log_size = 0;
-    char  *log_message;
-
-    zeModuleBuildLogGetString(lz_log, &log_size, nullptr);
-
-    CeedCall(CeedCalloc(log_size, &log_message));
-    zeModuleBuildLogGetString(lz_log, &log_size, log_message);
-
-    return CeedError(ceed, CEED_ERROR_BACKEND, "Failed to compile Level Zero module:\n%s", log_message);
+static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, const sycl::device &sycl_device, const std::string& path,
+                               SyclModule_t *sycl_module) {
+  try {
+    *sycl_module =  prtc::DynamicLibrary::open(path);
+  } catch (const std::exception& e) {
+    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
-
-  // sycl make_<type> only throws errors for backend mismatch--assume we have vetted this already
-  *sycl_module = new SyclModule_t(sycl::make_kernel_bundle<sycl::backend::ext_oneapi_level_zero, sycl::bundle_state::executable>(
-      {lz_module, sycl::ext::oneapi::level_zero::ownership::transfer}, sycl_context));
   return CEED_ERROR_SUCCESS;
 }
 
 // ------------------------------------------------------------------------------
-// Compile kernel source to an executable `sycl::kernel_bundle`
+// Compile kernel source to a shared library
 // ------------------------------------------------------------------------------
-int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t **sycl_module, const std::map<std::string, CeedInt> &constants) {
+int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module, const std::map<std::string, CeedInt> &constants) {
   Ceed_Sycl               *data;
   std::string              jit_source;
+  std::string              module_path;
   std::vector<std::string> flags;
-  ByteVector_t             il_binary;
 
   CeedCallBackend(CeedGetData(ceed, &data));
   CeedCallBackend(CeedJitAddDefinitions_Sycl(ceed, kernel_source, jit_source, constants));
   CeedCallBackend(CeedJitGetFlags_Sycl(flags));
-  CeedCallBackend(CeedJitCompileSource_Sycl(ceed, data->sycl_device, jit_source, il_binary, flags));
-  CeedCallBackend(CeedLoadModule_Sycl(ceed, data->sycl_context, data->sycl_device, il_binary, sycl_module));
+
+  CeedCallBackend(CeedJitCompileSource_Sycl(ceed, data->sycl_device, jit_source, module_path, flags));
+  
+  CeedCallBackend(CeedLoadModule_Sycl(ceed, data->sycl_context, data->sycl_device, module_path, sycl_module));
+  
   return CEED_ERROR_SUCCESS;
 }
 
 // ------------------------------------------------------------------------------
-// Get a sycl kernel from an existing kernel_bundle
-//
-// TODO: Error handle lz calls
+// Get a sycl kernel from an existing module
 // ------------------------------------------------------------------------------
-int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module, const std::string &kernel_name, sycl::kernel **sycl_kernel) {
-  Ceed_Sycl *data;
-
-  CeedCallBackend(CeedGetData(ceed, &data));
-
-  // sycl::get_native returns std::vector<ze_module_handle_t> for lz backend
-  // https://github.com/intel/llvm/blob/sycl/sycl/doc/extensions/supported/sycl_ext_oneapi_backend_level_zero.md
-  ze_module_handle_t lz_module = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(*sycl_module).front();
-
-  ze_kernel_desc_t   lz_kernel_desc = {ZE_STRUCTURE_TYPE_KERNEL_DESC, nullptr, 0, kernel_name.c_str()};
-  ze_kernel_handle_t lz_kernel;
-  ze_result_t        lz_err = zeKernelCreate(lz_module, &lz_kernel_desc, &lz_kernel);
-
-  if (ZE_RESULT_SUCCESS != lz_err) {
-    return CeedError(ceed, CEED_ERROR_BACKEND, "Failed to retrieve kernel from Level Zero module");
+int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel) {
+  try {
+    *sycl_kernel = sycl_module->getSymbol(kernel_name);
+  } catch (const std::exception& e) {
+    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
-
-  *sycl_kernel = new sycl::kernel(sycl::make_kernel<sycl::backend::ext_oneapi_level_zero>(
-      {*sycl_module, lz_kernel, sycl::ext::oneapi::level_zero::ownership::transfer}, data->sycl_context));
   return CEED_ERROR_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
 // Run SYCL kernel for spatial dimension with shared memory
 //------------------------------------------------------------------------------
-int CeedRunKernelDimSharedSycl(Ceed ceed, sycl::kernel *kernel, const int grid_size, const int block_size_x, const int block_size_y,
+int CeedRunKernelDimSharedSycl(Ceed ceed, SyclKernel_t *kernel, const int grid_size, const int block_size_x, const int block_size_y,
                                const int block_size_z, const int shared_mem_size, void **kernel_args) {
   sycl::range<3>    local_range(block_size_z, block_size_y, block_size_x);
   sycl::range<3>    global_range(grid_size * block_size_z, block_size_y, block_size_x);
@@ -173,15 +140,15 @@ int CeedRunKernelDimSharedSycl(Ceed ceed, sycl::kernel *kernel, const int grid_s
 
   //-----------
   // Order queue
-  Ceed_Sycl *ceed_Sycl;
+  // Ceed_Sycl *ceed_Sycl;
 
-  CeedCallBackend(CeedGetData(ceed, &ceed_Sycl));
-  sycl::event e = ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier();
+  // CeedCallBackend(CeedGetData(ceed, &ceed_Sycl));
+  // sycl::event e = ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier();
 
-  ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-    cgh.depends_on(e);
-    cgh.set_args(*kernel_args);
-    cgh.parallel_for(kernel_range, *kernel);
-  });
+  // ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+  //   cgh.depends_on(e);
+  //   cgh.set_args(*kernel_args);
+  //   cgh.parallel_for(kernel_range, *kernel);
+  // });
   return CEED_ERROR_SUCCESS;
 }
