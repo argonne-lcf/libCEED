@@ -15,7 +15,7 @@
 #include <libprtc/prtc.h>
 
 using SyclModule_t = std::shared_ptr<prtc::DynamicLibrary>;
-using SyclKernel_t = void*; // Revisit
+using SyclKernel_t = void*; // Revisit this
 
 CEED_INTERN int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module,
                                      const std::map<std::string, CeedInt> &constants = {});

@@ -12,6 +12,7 @@
 #include <ceed/jit-tools.h>
 #include <level_zero/ze_api.h>
 
+#include <cstdlib>
 #include <map>
 #include <sstream>
 #include <sycl/sycl.hpp>
@@ -67,18 +68,25 @@ static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
 
 //------------------------------------------------------------------------------
 // Compile sycl source to a shared library
+// TODO: Check if source, module, etc. already exists
 //------------------------------------------------------------------------------
 static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_device, const std::string &kernel_source, std::string& output_path,
                                             const std::vector<std::string> &flags = {}) {
-  
-  // Q: Should we write the kernel source string to a file here
-  //    or handle this in a separarte function;
 
-  // Should outputfile name be generated here?
+  // Get cache path from env variable
+  const char* cache_path = std::getenv("CEED_CACHE_DIR");
+
+  // Generate kernel hash
+  // E.g., see https://intel.github.io/llvm-docs/design/KernelProgramCache.html
+  // An example of directory structure can be found here:
+  // https://intel.github.io/llvm-docs/design/KernelProgramCache.html#persistent-cache-storage-structure
+
+  // Write source string to file
+  std::string source_path;
 
   // TODO: Get compiler-path and flags from env or some other means
   prtc::ShellCompiler compiler("icpx","-o","-c","-fPIC","-shared");
-  const auto [success, message] = compiler.compileAndLink(kernel_source,output_path,flags);
+  const auto [success, message] = compiler.compileAndLink(source_path,output_path,flags);
   // Q: Should we always output the compiler output in verbose/debug mode?
   if (!success) return CeedError((ceed), CEED_ERROR_BACKEND, message);
   return CEED_ERROR_SUCCESS;
