@@ -45,30 +45,8 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // QFunction kernel generation
   CeedCallBackend(CeedQFunctionGetFields(qf, &num_input_fields, &input_fields, &num_output_fields, &output_fields));
 
-  std::vector<CeedInt> input_sizes(num_input_fields);
-  CeedQFunctionField  *input_i = input_fields;
-
-  for (auto &size_i : input_sizes) {
-    CeedCallBackend(CeedQFunctionFieldGetSize(*input_i, &size_i));
-    ++input_i;
-  }
-
-  std::vector<CeedInt> output_sizes(num_output_fields);
-  CeedQFunctionField  *output_i = output_fields;
-
-  for (auto &size_i : output_sizes) {
-    CeedCallBackend(CeedQFunctionFieldGetSize(*output_i, &size_i));
-    ++output_i;
-  }
-
-  CeedCallBackend(CeedQFunctionGetKernelName(qf, &qfunction_name));
-
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source -----\n");
-  CeedCallBackend(CeedQFunctionLoadSourceToBuffer(qf, &qfunction_source));
-  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source Complete! -----\n");
-
-  CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-ref-qfunction.h", &read_write_kernel_path));
-
+  // Build strings for final kernel function
+  CeedCallBackend(CeedGetJitAbsolutePath(ceed, "ceed/jit-source/sycl/sycl-ref-qfunction.h", &read_write_kernel_path));  
   CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction Read/Write Kernel Source -----\n");
   {
     char *source;
@@ -77,11 +55,26 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
     read_write_kernel_source = source;
   }
   CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction Read/Write Kernel Source Complete! -----\n");
-
-  std::string_view  qf_name_view(qfunction_name);
-  std::string_view  qf_source_view(qfunction_source);
+  std::string_view  qf_name_view(impl->qfunction_name);
+  std::string_view  qf_source_view(impl->qfunction_source);
   std::string_view  rw_source_view(read_write_kernel_source);
   const std::string kernel_name = "CeedKernelSyclRefQFunction_" + std::string(qf_name_view);
+
+  // std::vector<CeedInt> input_sizes(num_input_fields);
+  // CeedQFunctionField  *input_i = input_fields;
+
+  // for (auto &size_i : input_sizes) {
+  //   CeedCallBackend(CeedQFunctionFieldGetSize(*input_i, &size_i));
+  //   ++input_i;
+  // }
+
+  // std::vector<CeedInt> output_sizes(num_output_fields);
+  // CeedQFunctionField  *output_i = output_fields;
+
+  // for (auto &size_i : output_sizes) {
+  //   CeedCallBackend(CeedQFunctionFieldGetSize(*output_i, &size_i));
+  //   ++output_i;
+  // }
 
   // Defintions
   std::ostringstream code;
@@ -92,75 +85,88 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // Kernel function
   // Here we are fixing a lower sub-group size value to avoid register spills
   // This needs to be revisited if all qfunctions require this.
-  code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) __kernel void " << kernel_name
-       << "(__global void *ctx, CeedInt Q,\n";
+  // code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) extern \"C\" void " << kernel_name
+  code << "#include <vector>\n\n";
+  code << "extern \"C\" void " << kernel_name
+       << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx,  CeedInt Q, Fields_Sycl fields) {\n";
 
   // OpenCL doesn't allow for structs with pointers.
   // We will need to pass all of the arguments individually.
   // Input parameters
+  code << "  "
+       << "const CeedScalar *fields_inputs[" << num_input_fields << "];\n";
   for (CeedInt i = 0; i < num_input_fields; ++i) {
     code << "  "
-         << "__global const CeedScalar *in_" << i << ",\n";
+         << "fields_inputs[" << i << "] = fields.inputs[" << i << "];\n";
   }
 
   // Output parameters
   code << "  "
-       << "__global CeedScalar *out_0";
-  for (CeedInt i = 1; i < num_output_fields; ++i) {
-    code << "\n,  "
-         << "__global CeedScalar *out_" << i;
+       << "const CeedScalar *fields_outputs[" << num_output_fields << "];\n";
+  for (CeedInt i = 0; i < num_output_fields; ++i) {
+    code << "  "
+         << "fields_outputs[" << i << "] = fields.outputs[" << i << "];\n";
   }
+  code << "\n";
+
+  // Insert SYCL barrier for out-of-order queues
+  code << "  std::vector<sycl::event> e;\n";
+  code << "  if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};\n\n";
+
   // Begin kernel function body
-  code << ") {\n\n";
+  code << "  "
+       << "sycl_queue.parallel_for<CeedQFunction_" << qf_name_view << ">(kernel_range, e, "
+       << "[=](sycl::id<1> id) {\n";
 
   // Inputs
-  code << "  // Input fields\n";
+  code << "    // Input fields\n";
   for (CeedInt i = 0; i < num_input_fields; ++i) {
-    code << "  CeedScalar U_" << i << "[" << input_sizes[i] << "];\n";
+    code << "    CeedScalar U_" << i << "[" << input_sizes[i] << "];\n";
   }
-  code << "  const CeedScalar *inputs[" << CeedIntMax(num_input_fields, 1) << "] = {U_0";
+  code << "    const CeedScalar *inputs[" << CeedIntMax(num_input_fields, 1) << "] = {U_0";
   for (CeedInt i = 1; i < num_input_fields; i++) {
     code << ", U_" << i << "\n";
   }
   code << "};\n\n";
 
   // Outputs
-  code << "  // Output fields\n";
+  code << "    // Output fields\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
-    code << "  CeedScalar V_" << i << "[" << output_sizes[i] << "];\n";
+    code << "    CeedScalar V_" << i << "[" << output_sizes[i] << "];\n";
   }
-  code << "  CeedScalar *outputs[" << CeedIntMax(num_output_fields, 1) << "] = {V_0";
+  code << "    CeedScalar *outputs[" << CeedIntMax(num_output_fields, 1) << "] = {V_0";
   for (CeedInt i = 1; i < num_output_fields; i++) {
     code << ", V_" << i << "\n";
   }
   code << "};\n\n";
 
-  code << "  const CeedInt q = get_global_linear_id();\n\n";
+  code << "    const CeedInt q = id;\n\n";
 
-  code << "if(q < Q){ \n\n";
+  code << "    if(q < Q) { \n\n";
 
   // Load inputs
-  code << "  // -- Load inputs\n";
+  code << "      // -- Load inputs\n";
   for (CeedInt i = 0; i < num_input_fields; i++) {
-    code << "  readQuads(" << input_sizes[i] << ", Q, q, "
-         << "in_" << i << ", U_" << i << ");\n";
+    code << "      readQuads<" << input_sizes[i] << ">(q, Q, "
+         << "fields_inputs[" << i << "], U_" << i << ");\n";
   }
   code << "\n";
 
   // QFunction
-  code << "  // -- Call QFunction\n";
-  code << "  " << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
+  code << "      // -- Call QFunction\n";
+  code << "      " << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
 
   // Write outputs
-  code << "  // -- Write outputs\n";
+  code << "      // -- Write outputs\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
-    code << "  writeQuads(" << output_sizes[i] << ", Q, q, "
-         << "V_" << i << ", out_" << i << ");\n";
+    code << "      writeQuads<" << output_sizes[i] << ">(q, Q, "
+         << "V_" << i << ", fields_outputs[" << i << "]);\n";
   }
-  code << "\n";
+  code << "    }\n";
 
   // End kernel function body
-  code << "}\n";
+  code <<"  });\n";
+  // End launcher function
   code << "}\n";
 
   // View kernel for debugging
