@@ -12,13 +12,15 @@
 //------------------------------------------------------------------------------
 // Read from quadrature points
 //------------------------------------------------------------------------------
-inline void readQuads(CeedInt N, CeedInt stride, CeedInt offset, const CeedScalar *src, CeedScalar *dest) {
-  for (CeedInt i = 0; i < N; ++i) dest[i] = src[stride * i + offset];
+template <int SIZE>
+inline void readQuads(CeedInt offset, CeedInt stride, const CeedScalar *src, CeedScalar *dest) {
+  for (CeedInt i = 0; i < SIZE; ++i) dest[i] = src[offset + stride * i];
 }
 
 //------------------------------------------------------------------------------
 // Write at quadrature points
 //------------------------------------------------------------------------------
-inline void writeQuads(CeedInt N, CeedInt stride, CeedInt offset, const CeedScalar *src, CeedScalar *dest) {
-  for (CeedInt i = 0; i < N; ++i) dest[stride * i + offset] = src[i];
+template <int SIZE>
+inline void writeQuads(CeedInt offset, CeedInt stride, const CeedScalar *src, CeedScalar *dest) {
+  for (CeedInt i = 0; i < SIZE; ++i) dest[offset + stride * i] = src[i];
 }

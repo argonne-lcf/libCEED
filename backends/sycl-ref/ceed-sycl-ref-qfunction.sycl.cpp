@@ -42,18 +42,24 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   CeedCallBackend(CeedQFunctionGetNumArgs(qf, &num_input_fields, &num_output_fields));
 
   // Read vectors
-  std::vector<const CeedScalar *> inputs(num_input_fields);
-  const CeedVector               *U_i = U;
-  for (auto &input_i : inputs) {
-    CeedCallBackend(CeedVectorGetArrayRead(*U_i, CEED_MEM_DEVICE, &input_i));
-    ++U_i;
-  }
+  // std::vector<const CeedScalar *> inputs(num_input_fields);
+  // const CeedVector               *U_i = U;
+  // for (auto &input_i : inputs) {
+  //   CeedCallBackend(CeedVectorGetArrayRead(*U_i, CEED_MEM_DEVICE, &input_i));
+  //   ++U_i;
+  // }
 
-  std::vector<CeedScalar *> outputs(num_output_fields);
-  CeedVector               *V_i = V;
-  for (auto &output_i : outputs) {
-    CeedCallBackend(CeedVectorGetArrayWrite(*V_i, CEED_MEM_DEVICE, &output_i));
-    ++V_i;
+  // std::vector<CeedScalar *> outputs(num_output_fields);
+  // CeedVector               *V_i = V;
+  // for (auto &output_i : outputs) {
+  //   CeedCallBackend(CeedVectorGetArrayWrite(*V_i, CEED_MEM_DEVICE, &output_i));
+  //   ++V_i;
+  // }
+  for (CeedInt i = 0; i < num_input_fields; i++) {
+    CeedCallBackend(CeedVectorGetArrayRead(U[i], CEED_MEM_DEVICE, &impl->fields.inputs[i]));
+  }
+  for (CeedInt i = 0; i < num_output_fields; i++) {
+    CeedCallBackend(CeedVectorGetArrayRead(V[i], CEED_MEM_DEVICE, &impl->fields.outputs[i]));
   }
 
   // Get context data
@@ -89,17 +95,26 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
     cgh.parallel_for(kernel_range, *(impl->QFunction));
   });
 
-  // Restore vectors
-  U_i = U;
-  for (auto &input_i : inputs) {
-    CeedCallBackend(CeedVectorRestoreArrayRead(*U_i, &input_i));
-    ++U_i;
-  }
+  // Call launcher function that executes kernel
+  *(impl->QFunction)(sycl_queue, context_data, Q, fields);
 
-  V_i = V;
-  for (auto &output_i : outputs) {
-    CeedCallBackend(CeedVectorRestoreArray(*V_i, &output_i));
-    ++V_i;
+  // Restore vectors
+  // U_i = U;
+  // for (auto &input_i : inputs) {
+  //   CeedCallBackend(CeedVectorRestoreArrayRead(*U_i, &input_i));
+  //   ++U_i;
+  // }
+
+  // V_i = V;
+  // for (auto &output_i : outputs) {
+  //   CeedCallBackend(CeedVectorRestoreArray(*V_i, &output_i));
+  //   ++V_i;
+  // }
+  for (CeedInt i = 0; i < num_input_fields; i++) {
+    CeedCallBackend(CeedVectorRestoreArrayRead(U[i], &impl->fields.inputs[i]));
+  }
+  for (CeedInt i = 0; i < num_output_fields; i++) {
+    CeedCallBackend(CeedVectorRestoreArray(V[i], &impl->fields.outputs[i]));
   }
 
   // Restore context
@@ -133,6 +148,13 @@ int CeedQFunctionCreate_Sycl(CeedQFunction qf) {
   CeedCallBackend(CeedQFunctionGetCeed(qf, &ceed));
   CeedCallBackend(CeedCalloc(1, &impl));
   CeedCallBackend(CeedQFunctionSetData(qf, impl));
+
+  // Read QFunction source
+  CeedCallBackend(CeedQFunctionGetKernelName(qf, &impl->qfunction_name));
+  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source -----\n");
+  CeedCallBackend(CeedQFunctionLoadSourceToBuffer(qf, &impl->qfunction_source));
+  CeedDebug256(ceed, CEED_DEBUG_COLOR_SUCCESS, "----- Loading QFunction User Source Complete! -----\n");
+
   // Register backend functions
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "QFunction", qf, "Apply", CeedQFunctionApply_Sycl));
   CeedCallBackend(CeedSetBackendFunctionCpp(ceed, "QFunction", qf, "Destroy", CeedQFunctionDestroy_Sycl));
