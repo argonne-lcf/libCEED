@@ -52,7 +52,7 @@ typedef struct {
   CeedInt       num_qpts;
   CeedInt       buf_len;
   CeedInt       op_len;
-  SyclModule_t *sycl_module;
+  SyclBundle_t *sycl_bundle;
   CeedScalar   *d_interp_1d;
   CeedScalar   *d_grad_1d;
   CeedScalar   *d_q_weight_1d;
@@ -68,7 +68,7 @@ typedef struct {
   CeedScalar *d_q_weight;
 } CeedBasisNonTensor_Sycl;
 
-using SyclQfunctionKernel_t = std::function<void(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl)>;
+using SyclQfunctionKernel_t = std::function<void(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl*)>;
 
 typedef struct {
   SyclModule_t *sycl_module;

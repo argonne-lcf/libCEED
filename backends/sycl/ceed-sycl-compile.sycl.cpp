@@ -17,6 +17,7 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <algorithm>
 #include <sycl/sycl.hpp>
 
 #include "ceed-sycl-common.hpp"
@@ -77,12 +78,12 @@ static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
 // TODO: Check if source, module, etc. already exists
 //------------------------------------------------------------------------------
 static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_device, const std::string &kernel_source, std::string& output_path,
-                                            const std::vector<std::string> &flags = {}) {
+                                            const std::vector<std::string> flags = {}) {
 
   // Get cache path from env variable
   std::string cache_root;
   // TODO: Add default directory to current working directory
-  if(std::getenv()"CEED_CACHE_DIR")) {
+  if(std::getenv("CEED_CACHE_DIR")) {
     cache_root = std::string(std::getenv("CEED_CACHE_DIR")) + "/.ceed/cache";
   } else {
     cache_root = std::string(std::getenv("PWD")) + "/.ceed/cache";
@@ -101,14 +102,15 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
   size_t kernel_source_hash = string_hash(kernel_source);
 
   // Hash compilation flags
-  std::sort(flags.begin(), flags.end());
-  std::string all_flags = prtc::concatenateFlags(flags);
+  std::vector<std::string> copy_flags = flags;
+  std::sort(copy_flags.begin(), copy_flags.end());
+  std::string all_flags = prtc::concatenateFlags(copy_flags);
   size_t build_options_hash = string_hash(all_flags);
 
   // Hash compiler version
   prtc::ShellCommand command("icpx --version");
   const auto [success, compiler_version] = command.result();
-  if (!success) return CeedError((ceed), CEED_ERROR_BACKEND, compiler_version);
+  if (!success) return CeedError((ceed), CEED_ERROR_BACKEND, compiler_version.c_str());
   size_t compiler_hash = string_hash(compiler_version);
 
   // Determine file paths for source and binaries based on hashes
@@ -124,9 +126,9 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
 
   // TODO: Get compiler-path and flags from env or some other means
   prtc::ShellCompiler compiler("icpx","-o","-c","-fPIC","-shared");
-  const auto [success, message] = compiler.compileAndLink(source_file_path,object_file_path,flags);
+  const auto [build_success, message] = compiler.compileAndLink(source_file_path,object_file_path,flags);
   // Q: Should we always output the compiler output in verbose/debug mode?
-  if (!success) return CeedError((ceed), CEED_ERROR_BACKEND, message);
+  if (!build_success) return CeedError((ceed), CEED_ERROR_BACKEND, message.c_str());
   return CEED_ERROR_SUCCESS;
 }
 
