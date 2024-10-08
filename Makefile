@@ -121,7 +121,7 @@ OMP_FLAG.oneAPI         := $(OMP_FLAG.icc)
 SYCL_FLAG.gcc           :=
 SYCL_FLAG.clang         := -fsycl
 SYCL_FLAG.icc           :=
-SYCL_FLAG.oneAPI        := -fsycl -fno-sycl-id-queries-fit-in-int
+SYCL_FLAG.oneAPI        := -fsycl -fno-sycl-id-queries-fit-in-int -fPIC
 OPT.gcc                 := -g -ffp-contract=fast
 OPT.clang               := $(OPT.gcc)
 OPT.icc                 := $(OPT.gcc)
@@ -289,10 +289,11 @@ hip-ref.hip    := $(sort $(wildcard backends/hip-ref/kernels/*.hip.cpp))
 hip-shared.c   := $(sort $(wildcard backends/hip-shared/*.c))
 hip-gen.c      := $(sort $(wildcard backends/hip-gen/*.c))
 hip-gen.cpp    := $(sort $(wildcard backends/hip-gen/*.cpp))
+sycl-prtc.cpp    := $(sort $(wildcard backends/sycl/libprtc/*.cpp))
 sycl-core.cpp  := $(sort $(wildcard backends/sycl/*.sycl.cpp))
 sycl-ref.cpp   := $(sort $(wildcard backends/sycl-ref/*.sycl.cpp))
-sycl-shared.cpp:= $(sort $(wildcard backends/sycl-shared/*.sycl.cpp))
-sycl-gen.cpp   := $(sort $(wildcard backends/sycl-gen/*.sycl.cpp))
+# sycl-shared.cpp:= $(sort $(wildcard backends/sycl-shared/*.sycl.cpp))
+# sycl-gen.cpp   := $(sort $(wildcard backends/sycl-gen/*.sycl.cpp))
 
 hip-all.c := interface/ceed-hip.c $(hip.c) $(hip-ref.c) $(hip-shared.c) $(hip-gen.c)
 hip-all.cpp := $(hip.cpp) $(hip-ref.cpp) $(hip-gen.cpp)
@@ -418,7 +419,7 @@ ifneq ($(wildcard $(XSMM_DIR)/lib/libxsmm.*),)
 endif
 
 # OCCA Backends
-OCCA_BACKENDS = /cpu/self/occa
+OCCA_BACKENDS = #/cpu/self/occa
 ifneq ($(wildcard $(OCCA_DIR)/lib/libocca.*),)
   OCCA_MODES := $(shell LD_LIBRARY_PATH=$(OCCA_DIR)/lib $(OCCA_DIR)/bin/occa modes)
   OCCA_BACKENDS += $(if $(filter OpenMP,$(OCCA_MODES)),/cpu/openmp/occa)
@@ -471,7 +472,7 @@ ifneq ($(HIP_LIB_DIR),)
 endif
 
 # SYCL Backends
-SYCL_BACKENDS = /gpu/sycl/ref /gpu/sycl/shared /gpu/sycl/gen
+SYCL_BACKENDS = /gpu/sycl/ref #/gpu/sycl/shared /gpu/sycl/gen
 ifneq ($(SYCL_DIR),)
   SYCL_LIB_DIR := $(wildcard $(foreach d,lib lib64,$(SYCL_DIR)/$d/libsycl.${SO_EXT}))
   SYCL_LIB_DIR := $(patsubst %/,%,$(dir $(firstword $(SYCL_LIB_DIR))))
@@ -479,7 +480,7 @@ endif
 ifneq ($(SYCL_LIB_DIR),)
   PKG_LIBS += $(SYCL_FLAG) -lze_loader
   LIBCEED_CONTAINS_CXX = 1
-  libceed.sycl += $(sycl-core.cpp) $(sycl-ref.cpp) $(sycl-shared.cpp) $(sycl-gen.cpp)
+  libceed.sycl += $(sycl-core.cpp) $(sycl-prtc.cpp) $(sycl-ref.cpp) #$(sycl-shared.cpp) $(sycl-gen.cpp)
   BACKENDS_MAKE += $(SYCL_BACKENDS)
 endif
 
