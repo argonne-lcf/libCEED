@@ -59,44 +59,24 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
     CeedCallBackend(CeedVectorGetArrayRead(U[i], CEED_MEM_DEVICE, &impl->fields.inputs[i]));
   }
   for (CeedInt i = 0; i < num_output_fields; i++) {
-    CeedCallBackend(CeedVectorGetArrayRead(V[i], CEED_MEM_DEVICE, &impl->fields.outputs[i]));
+    CeedCallBackend(CeedVectorGetArrayWrite(V[i], CEED_MEM_DEVICE, &impl->fields.outputs[i]));
   }
 
   // Get context data
   CeedCallBackend(CeedQFunctionGetInnerContextData(qf, CEED_MEM_DEVICE, &context_data));
 
-  std::vector<sycl::event> e;
-
-  if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
-
   // Launch as a basic parallel_for over Q quadrature points
-  ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-    cgh.depends_on(e);
-
-    int iarg{};
-    cgh.set_arg(iarg, context_data);
-    ++iarg;
-    cgh.set_arg(iarg, Q);
-    ++iarg;
-    for (auto &input_i : inputs) {
-      cgh.set_arg(iarg, input_i);
-      ++iarg;
-    }
-    for (auto &output_i : outputs) {
-      cgh.set_arg(iarg, output_i);
-      ++iarg;
-    }
     // Hard-coding the work-group size for now
     // We could use the Level Zero API to query and set an appropriate size in future
     // Equivalent of CUDA Occupancy Calculator
-    int               wg_size   = WG_SIZE_QF;
-    sycl::range<1>    rounded_Q = ((Q + (wg_size - 1)) / wg_size) * wg_size;
-    sycl::nd_range<1> kernel_range(rounded_Q, wg_size);
-    cgh.parallel_for(kernel_range, *(impl->QFunction));
-  });
+  int               wg_size   = WG_SIZE_QF;
+  sycl::range<1>    rounded_Q = ((Q + (wg_size - 1)) / wg_size) * wg_size;
+  sycl::nd_range<1> kernel_range(rounded_Q, wg_size);
 
   // Call launcher function that executes kernel
-  *(impl->QFunction)(sycl_queue, context_data, Q, fields);
+  // Pass in nd_range as second argument
+  // Pass in vector of events as third argument
+  (*impl->QFunction)(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
 
   // Restore vectors
   // U_i = U;

@@ -36,7 +36,7 @@ static constexpr SpecID BASIS_Q_1D_ID;
 // Interpolation kernel - tensor
 //------------------------------------------------------------------------------
 template <int is_transpose>
-static int CeedBasisApplyInterp_Sycl(sycl::queue &sycl_queue, const SyclModule_t &sycl_module, CeedInt num_elem, const CeedBasis_Sycl *impl,
+static int CeedBasisApplyInterp_Sycl(sycl::queue &sycl_queue, const SyclBundle_t &sycl_bundle, CeedInt num_elem, const CeedBasis_Sycl *impl,
                                      const CeedScalar *u, CeedScalar *v) {
   const CeedInt     buf_len   = impl->buf_len;
   const CeedInt     op_len    = impl->op_len;
@@ -55,7 +55,7 @@ static int CeedBasisApplyInterp_Sycl(sycl::queue &sycl_queue, const SyclModule_t
 
   sycl_queue.submit([&](sycl::handler &cgh) {
     cgh.depends_on(e);
-    cgh.use_kernel_bundle(sycl_module);
+    cgh.use_kernel_bundle(sycl_bundle);
 
     sycl::local_accessor<CeedScalar> s_mem(op_len + 2 * buf_len, cgh);
 
@@ -139,7 +139,7 @@ static int CeedBasisApplyInterp_Sycl(sycl::queue &sycl_queue, const SyclModule_t
 // Gradient kernel - tensor
 //------------------------------------------------------------------------------
 template <int is_transpose>
-static int CeedBasisApplyGrad_Sycl(sycl::queue &sycl_queue, const SyclModule_t &sycl_module, CeedInt num_elem, const CeedBasis_Sycl *impl,
+static int CeedBasisApplyGrad_Sycl(sycl::queue &sycl_queue, const SyclBundle_t &sycl_bundle, CeedInt num_elem, const CeedBasis_Sycl *impl,
                                    const CeedScalar *u, CeedScalar *v) {
   const CeedInt     buf_len   = impl->buf_len;
   const CeedInt     op_len    = impl->op_len;
@@ -158,7 +158,7 @@ static int CeedBasisApplyGrad_Sycl(sycl::queue &sycl_queue, const SyclModule_t &
 
   sycl_queue.submit([&](sycl::handler &cgh) {
     cgh.depends_on(e);
-    cgh.use_kernel_bundle(sycl_module);
+    cgh.use_kernel_bundle(sycl_bundle);
 
     sycl::local_accessor<CeedScalar> s_mem(2 * (op_len + buf_len), cgh);
 
@@ -299,16 +299,16 @@ static int CeedBasisApply_Sycl(CeedBasis basis, const CeedInt num_elem, CeedTran
   switch (eval_mode) {
     case CEED_EVAL_INTERP:
       if (is_transpose) {
-        CeedCallBackend(CeedBasisApplyInterp_Sycl<true>(data->sycl_queue, *impl->sycl_module, num_elem, impl, d_u, d_v));
+        CeedCallBackend(CeedBasisApplyInterp_Sycl<true>(data->sycl_queue, *impl->sycl_bundle, num_elem, impl, d_u, d_v));
       } else {
-        CeedCallBackend(CeedBasisApplyInterp_Sycl<false>(data->sycl_queue, *impl->sycl_module, num_elem, impl, d_u, d_v));
+        CeedCallBackend(CeedBasisApplyInterp_Sycl<false>(data->sycl_queue, *impl->sycl_bundle, num_elem, impl, d_u, d_v));
       }
       break;
     case CEED_EVAL_GRAD:
       if (is_transpose) {
-        CeedCallBackend(CeedBasisApplyGrad_Sycl<true>(data->sycl_queue, *impl->sycl_module, num_elem, impl, d_u, d_v));
+        CeedCallBackend(CeedBasisApplyGrad_Sycl<true>(data->sycl_queue, *impl->sycl_bundle, num_elem, impl, d_u, d_v));
       } else {
-        CeedCallBackend(CeedBasisApplyGrad_Sycl<false>(data->sycl_queue, *impl->sycl_module, num_elem, impl, d_u, d_v));
+        CeedCallBackend(CeedBasisApplyGrad_Sycl<false>(data->sycl_queue, *impl->sycl_bundle, num_elem, impl, d_u, d_v));
       }
       break;
     case CEED_EVAL_WEIGHT:
@@ -614,7 +614,7 @@ int CeedBasisCreateTensorH1_Sycl(CeedInt dim, CeedInt P_1d, CeedInt Q_1d, const 
   input_bundle.set_specialization_constant<BASIS_Q_1D_ID>(Q_1d);
   input_bundle.set_specialization_constant<BASIS_P_1D_ID>(P_1d);
 
-  CeedCallSycl(ceed, impl->sycl_module = new SyclModule_t(sycl::build(input_bundle)));
+  CeedCallSycl(ceed, impl->sycl_bundle = new SyclBundle_t(sycl::build(input_bundle)));
 
   CeedCallBackend(CeedBasisSetData(basis, impl));
 

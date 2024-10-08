@@ -30,7 +30,6 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   Ceed                ceed;
   Ceed_Sycl          *data;
   const char         *read_write_kernel_path, *read_write_kernel_source;
-  const char         *qfunction_name, *qfunction_source;
   CeedInt             num_input_fields, num_output_fields;
   CeedQFunctionField *input_fields, *output_fields;
   CeedQFunction_Sycl *impl;
@@ -60,21 +59,21 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   std::string_view  rw_source_view(read_write_kernel_source);
   const std::string kernel_name = "CeedKernelSyclRefQFunction_" + std::string(qf_name_view);
 
-  // std::vector<CeedInt> input_sizes(num_input_fields);
-  // CeedQFunctionField  *input_i = input_fields;
+  std::vector<CeedInt> input_sizes(num_input_fields);
+  CeedQFunctionField  *input_i = input_fields;
 
-  // for (auto &size_i : input_sizes) {
-  //   CeedCallBackend(CeedQFunctionFieldGetSize(*input_i, &size_i));
-  //   ++input_i;
-  // }
+  for (auto &size_i : input_sizes) {
+    CeedCallBackend(CeedQFunctionFieldGetSize(*input_i, &size_i));
+    ++input_i;
+  }
 
-  // std::vector<CeedInt> output_sizes(num_output_fields);
-  // CeedQFunctionField  *output_i = output_fields;
+  std::vector<CeedInt> output_sizes(num_output_fields);
+  CeedQFunctionField  *output_i = output_fields;
 
-  // for (auto &size_i : output_sizes) {
-  //   CeedCallBackend(CeedQFunctionFieldGetSize(*output_i, &size_i));
-  //   ++output_i;
-  // }
+  for (auto &size_i : output_sizes) {
+    CeedCallBackend(CeedQFunctionFieldGetSize(*output_i, &size_i));
+    ++output_i;
+  }
 
   // Defintions
   std::ostringstream code;
@@ -88,7 +87,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) extern \"C\" void " << kernel_name
   code << "#include <vector>\n\n";
   code << "extern \"C\" void " << kernel_name
-       << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx,  CeedInt Q, Fields_Sycl fields) {\n";
+       << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx,  CeedInt Q, Fields_Sycl *fields) {\n";
 
   // OpenCL doesn't allow for structs with pointers.
   // We will need to pass all of the arguments individually.
@@ -97,7 +96,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
        << "const CeedScalar *fields_inputs[" << num_input_fields << "];\n";
   for (CeedInt i = 0; i < num_input_fields; ++i) {
     code << "  "
-         << "fields_inputs[" << i << "] = fields.inputs[" << i << "];\n";
+         << "fields_inputs[" << i << "] = fields->inputs[" << i << "];\n";
   }
 
   // Output parameters
@@ -105,7 +104,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
        << "const CeedScalar *fields_outputs[" << num_output_fields << "];\n";
   for (CeedInt i = 0; i < num_output_fields; ++i) {
     code << "  "
-         << "fields_outputs[" << i << "] = fields.outputs[" << i << "];\n";
+         << "fields_outputs[" << i << "] = fields->outputs[" << i << "];\n";
   }
   code << "\n";
 
@@ -174,11 +173,10 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   CeedDebug(ceed, code.str().c_str());
 
   // Compile kernel
-  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module));
+  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), impl->sycl_module));
   CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, &impl->QFunction));
 
   // Cleanup
-  CeedCallBackend(CeedFree(&qfunction_source));
   CeedCallBackend(CeedFree(&read_write_kernel_path));
   CeedCallBackend(CeedFree(&read_write_kernel_source));
   CeedCallBackend(CeedDestroy(&ceed));

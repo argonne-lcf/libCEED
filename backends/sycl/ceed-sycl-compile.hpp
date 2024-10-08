@@ -12,16 +12,17 @@
 #include <map>
 #include <sycl/sycl.hpp>
 
-#include <libprtc/prtc.h>
+#include "libprtc/prtc.h"
 
 using SyclModule_t = std::shared_ptr<prtc::DynamicLibrary>;
+using SyclBundle_t = sycl::kernel_bundle<sycl::bundle_state::executable>;
 
-CEED_INTERN int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t **sycl_module,
+CEED_INTERN int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module,
                                      const std::map<std::string, CeedInt> &constants = {});
 
 template <class SyclKernel_t>
-CEED_INTERN int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module, const std::string &kernel_name, SyclKernel_t **sycl_kernel);
+int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module, const std::string &kernel_name, SyclKernel_t **sycl_kernel);
 
 template <class SyclKernel_t>
-CEED_INTERN int CeedRunKernelDimSharedSycl(Ceed ceed, SyclKernel_t *kernel, const int grid_size, const int block_size_x, const int block_size_y,
+int CeedRunKernelDimSharedSycl(Ceed ceed, SyclKernel_t *kernel, const int grid_size, const int block_size_x, const int block_size_y,
                                            const int block_size_z, const int shared_mem_size, void **args);

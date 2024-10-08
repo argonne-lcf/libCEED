@@ -6,6 +6,8 @@
 
 namespace prtc {
 
+std::string concatenateFlags(const std::vector<std::string>& flags);
+
 class ShellCompiler {
  public:
   ShellCompiler(const std::string& executable, const std::string& output_flag,
