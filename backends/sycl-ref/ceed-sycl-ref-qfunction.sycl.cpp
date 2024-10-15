@@ -111,7 +111,7 @@ static int CeedQFunctionDestroy_Sycl(CeedQFunction qf) {
   CeedCallBackend(CeedQFunctionGetData(qf, &impl));
   CeedCallBackend(CeedQFunctionGetCeed(qf, &ceed));
   delete impl->QFunction;
-  delete impl->sycl_module;
+  // delete impl->sycl_module;
   CeedCallBackend(CeedFree(&impl));
   return CEED_ERROR_SUCCESS;
 }

@@ -71,7 +71,7 @@ typedef struct {
 using SyclQfunctionKernel_t = std::function<void(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl*)>;
 
 typedef struct {
-  SyclModule_t *sycl_module;
+  SyclModule_t sycl_module;
   const char *qfunction_name;
   const char *qfunction_source;
   SyclQfunctionKernel_t *QFunction;

@@ -136,9 +136,9 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
 // Load (compile) SPIR-V source and wrap in sycl kernel_bundle
 // ------------------------------------------------------------------------------
 static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, const sycl::device &sycl_device, const std::string& path,
-                               SyclModule_t *sycl_module) {
+                               SyclModule_t sycl_module) {
   try {
-    *sycl_module =  prtc::DynamicLibrary::open(path);
+    sycl_module =  prtc::DynamicLibrary::open(path);
   } catch (const std::exception& e) {
     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
@@ -148,7 +148,7 @@ static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, con
 // ------------------------------------------------------------------------------
 // Compile kernel source to a shared library
 // ------------------------------------------------------------------------------
-int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module, const std::map<std::string, CeedInt> &constants) {
+int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t sycl_module, const std::map<std::string, CeedInt> &constants) {
   Ceed_Sycl               *data;
   std::string              jit_source;
   std::string              module_path;
@@ -168,15 +168,15 @@ int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule
 // ------------------------------------------------------------------------------
 // Get a sycl kernel from an existing module
 // ------------------------------------------------------------------------------
-template <class SyclKernel_t>
-int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel) {
-  try {
-    *sycl_kernel = sycl_module->getFunction<SyclKernel_t>(kernel_name);
-  } catch (const std::exception& e) {
-    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
-  }
-  return CEED_ERROR_SUCCESS;
-}
+// template <class SyclKernel_t>
+// int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel) {
+//   try {
+//     *sycl_kernel = sycl_module->getFunction<SyclKernel_t>(kernel_name);
+//   } catch (const std::exception& e) {
+//     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
+//   }
+//   return CEED_ERROR_SUCCESS;
+// }
 
 //------------------------------------------------------------------------------
 // Run SYCL kernel for spatial dimension with shared memory
