@@ -34,8 +34,8 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   CeedQFunctionField *input_fields, *output_fields;
   CeedQFunction_Sycl *impl;
 
-  // QFunction is built
   CeedCallBackend(CeedQFunctionGetData(qf, (void **)&impl));
+  // QFunction is built
   if (impl->QFunction) return CEED_ERROR_SUCCESS;
 
   CeedCallBackend(CeedQFunctionGetCeed(qf, &ceed));
@@ -176,7 +176,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // Compile kernel
   CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module));
   std::cout << "\n Module built \n";
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, impl->QFunction));
+  CeedCallBackend(CeedGetKernel_Sycl<SyclQFunctionKernel_t>(ceed, impl->sycl_module, kernel_name, &impl->QFunction));
   std::cout << "\n Kernel retrieved \n";
 
   // Cleanup
