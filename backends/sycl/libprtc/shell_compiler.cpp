@@ -7,7 +7,7 @@
 #include "shell_command.h"
 
 namespace prtc {
-namespace {
+// namespace {
 
 std::string concatenateFlags(const std::vector<std::string>& flags) {
   std::string all_flags{};
@@ -17,7 +17,7 @@ std::string concatenateFlags(const std::vector<std::string>& flags) {
   // Remove last space
   if (!all_flags.empty()) all_flags.pop_back();
   return all_flags;
-}
+// }
 
 }  // namespace
 

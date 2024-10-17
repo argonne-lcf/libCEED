@@ -5,6 +5,7 @@
 #include <string>
 
 #include "function_traits.h"
+#include <functional>
 
 namespace prtc {
 
@@ -22,7 +23,8 @@ class DynamicLibrary : public std::enable_shared_from_this<DynamicLibrary> {
 
   template <class F>
   F getFunction(const std::string& name) {
-    return function_cast<F>(getSymbol(name));
+    // return function_cast<F>(getSymbol(name));
+    return reinterpret_cast<F>(getSymbol(name));
   }
 
  private:

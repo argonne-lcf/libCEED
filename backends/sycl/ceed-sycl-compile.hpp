@@ -25,6 +25,7 @@ int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::str
   try {
     *sycl_kernel = sycl_module->getFunction<SyclKernel_t>(kernel_name);
   } catch (const std::exception& e) {
+    std::cout<< "\nUnable to retrieve kernel\n";
     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
   return CEED_ERROR_SUCCESS;
