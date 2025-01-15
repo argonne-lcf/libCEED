@@ -776,7 +776,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   jit_constants["GROUP_SIZE_Z"] = block_sizes[2];
 
   // Compile kernel into a kernel bundle
-  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module, jit_constants));
+  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), impl->sycl_module, jit_constants));
 
   // Load kernel function
   CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, operator_name, &impl->op));

@@ -17,11 +17,26 @@
 using SyclModule_t = std::shared_ptr<prtc::DynamicLibrary>;
 using SyclBundle_t = sycl::kernel_bundle<sycl::bundle_state::executable>;
 
-CEED_INTERN int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module,
+int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t* sycl_module,
                                      const std::map<std::string, CeedInt> &constants = {});
 
+// template <class SyclKernel_t>
+// int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel);
+
 template <class SyclKernel_t>
-int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t *sycl_module, const std::string &kernel_name, SyclKernel_t **sycl_kernel);
+int CeedGetKernel_Sycl(Ceed ceed, SyclModule_t sycl_module, std::string kernel_name, SyclKernel_t *sycl_kernel) {
+  //try {
+    std::cout<<"\n Entered GetKernel\n";
+    void *kernel_ptr = sycl_module->getFunction2(kernel_name);
+    std::cout<<"\n Kernel pointer retrieved\n";
+    SyclKernel_t *temp = reinterpret_cast<SyclKernel_t*>(kernel_ptr);
+    std::cout<<"\n Kernel pointer recast\n";
+    sycl_kernel = temp;
+  //} catch (const std::exception& e) {
+  //  return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
+  //}
+  return CEED_ERROR_SUCCESS;
+}
 
 template <class SyclKernel_t>
 int CeedRunKernelDimSharedSycl(Ceed ceed, SyclKernel_t *kernel, const int grid_size, const int block_size_x, const int block_size_y,

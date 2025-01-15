@@ -18,6 +18,7 @@ class function_traits<std::function<R(Args...)>> {
 template <class F>
 F function_cast(void* p) {
   return function_traits<F>::cast(p);
+  // return reinterpret_cast<F>(p);
 }
 
 }  // namespace prtc
