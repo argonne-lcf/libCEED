@@ -33,6 +33,8 @@ static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_sourc
   const char *jit_defs_path, *jit_defs_source;
   const char *sycl_jith_path = "ceed/jit-source/sycl/sycl-jit.h";
 
+  oss << "#include<sycl/sycl.hpp>\n\n";
+
   // Prepend defined constants
   for (const auto &[name, value] : constants) {
     oss << "#define " << name << " " << value << "\n";
@@ -65,7 +67,7 @@ static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_sourc
 static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
 
   // flags = {std::string("-cl-std=CL3.0"), std::string("-Dint32_t=int")};
-  flags = {std::string("-fsycl"), std::string("-fno-sycl-id-queries-fit-in-int"), std::string("-Dint32_t=int")};
+  flags = {std::string("-fsycl"), std::string("-fno-sycl-id-queries-fit-in-int")};
   // TODO : Add AOT flags and other optimization flags
   // flags.push_back(std::string("-O3"));
   // flags.push_back(std::string("-fsycl-targets=spir64_gen -Xsycl-target-backend \"-device pvc\" "))
@@ -117,6 +119,10 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
   std::string cache_path = cache_root + "/" + std::to_string(compiler_hash) + "/" + std::to_string(build_options_hash) + "/" + std::to_string(kernel_source_hash) + "/";
   std::string source_file_path = cache_path + "source.cpp";
   std::string object_file_path = cache_path + "binary.so";
+  std::string mkdir_command = std::string("mkdir -p ") + cache_path;
+  prtc::ShellCommand make_dir(mkdir_command);
+  auto [mkdir_success, mkdir_message] = make_dir.result();
+  if(!mkdir_success) return CeedError((ceed), CEED_ERROR_BACKEND, mkdir_message.c_str());
 
   // Write source string to file
   std::ofstream source_file;
@@ -126,9 +132,9 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
 
   // TODO: Get compiler-path and flags from env or some other means
   prtc::ShellCompiler compiler("icpx","-o","-c","-fPIC","-shared");
-  const auto [build_success, message] = compiler.compileAndLink(source_file_path,object_file_path,flags);
+  const auto [build_success, build_message] = compiler.compileAndLink(source_file_path,object_file_path,flags);
   // Q: Should we always output the compiler output in verbose/debug mode?
-  if (!build_success) return CeedError((ceed), CEED_ERROR_BACKEND, message.c_str());
+  if (!build_success) return CeedError((ceed), CEED_ERROR_BACKEND, build_message.c_str());
   return CEED_ERROR_SUCCESS;
 }
 
@@ -136,9 +142,11 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
 // Load (compile) SPIR-V source and wrap in sycl kernel_bundle
 // ------------------------------------------------------------------------------
 static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, const sycl::device &sycl_device, const std::string& path,
-                               SyclModule_t *sycl_module) {
+                               SyclModule_t* sycl_module) {
   try {
     *sycl_module =  prtc::DynamicLibrary::open(path);
+    std::string check_path = (*sycl_module)->path();
+    std::cout<<"\n Module created from path "<<check_path<<std::endl;
   } catch (const std::exception& e) {
     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
@@ -148,7 +156,7 @@ static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, con
 // ------------------------------------------------------------------------------
 // Compile kernel source to a shared library
 // ------------------------------------------------------------------------------
-int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t *sycl_module, const std::map<std::string, CeedInt> &constants) {
+int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule_t* sycl_module, const std::map<std::string, CeedInt> &constants) {
   Ceed_Sycl               *data;
   std::string              jit_source;
   std::string              module_path;
@@ -168,15 +176,15 @@ int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule
 // ------------------------------------------------------------------------------
 // Get a sycl kernel from an existing module
 // ------------------------------------------------------------------------------
-template <class SyclKernel_t>
-int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel) {
-  try {
-    *sycl_kernel = sycl_module->getFunction<SyclKernel_t>(kernel_name);
-  } catch (const std::exception& e) {
-    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
-  }
-  return CEED_ERROR_SUCCESS;
-}
+// template <class SyclKernel_t>
+// int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel) {
+//   try {
+//     *sycl_kernel = sycl_module->getFunction<SyclKernel_t>(kernel_name);
+//   } catch (const std::exception& e) {
+//     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
+//   }
+//   return CEED_ERROR_SUCCESS;
+// }
 
 //------------------------------------------------------------------------------
 // Run SYCL kernel for spatial dimension with shared memory
