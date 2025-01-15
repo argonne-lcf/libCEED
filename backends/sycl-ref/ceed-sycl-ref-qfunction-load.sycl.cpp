@@ -86,6 +86,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // This needs to be revisited if all qfunctions require this.
   // code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) extern \"C\" void " << kernel_name
   code << "#include <vector>\n\n";
+  code << "class CeedQFunction_" << qf_name_view << ";\n\n";
   code << "extern \"C\" void " << kernel_name
        << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx,  CeedInt Q, Fields_Sycl *fields) {\n";
 
@@ -101,7 +102,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
 
   // Output parameters
   code << "  "
-       << "const CeedScalar *fields_outputs[" << num_output_fields << "];\n";
+       << "CeedScalar *fields_outputs[" << num_output_fields << "];\n";
   for (CeedInt i = 0; i < num_output_fields; ++i) {
     code << "  "
          << "fields_outputs[" << i << "] = fields->outputs[" << i << "];\n";
@@ -115,7 +116,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // Begin kernel function body
   code << "  "
        << "sycl_queue.parallel_for<CeedQFunction_" << qf_name_view << ">(kernel_range, e, "
-       << "[=](sycl::id<1> id) {\n";
+       << "[=](sycl::nd_item<1> item) {\n";
 
   // Inputs
   code << "    // Input fields\n";
@@ -139,7 +140,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   }
   code << "};\n\n";
 
-  code << "    const CeedInt q = id;\n\n";
+  code << "    const CeedInt q = item.get_global_linear_id();\n\n";
 
   code << "    if(q < Q) { \n\n";
 
@@ -173,8 +174,10 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   CeedDebug(ceed, code.str().c_str());
 
   // Compile kernel
-  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), impl->sycl_module));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, &impl->QFunction));
+  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module));
+  std::cout << "\n Module built \n";
+  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, kernel_name, impl->QFunction));
+  std::cout << "\n Kernel retrieved \n";
 
   // Cleanup
   CeedCallBackend(CeedFree(&read_write_kernel_path));

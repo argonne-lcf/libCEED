@@ -3,11 +3,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "shell_command.h"
 
 namespace prtc {
-namespace {
+// namespace {
 
 std::string concatenateFlags(const std::vector<std::string>& flags) {
   std::string all_flags{};
@@ -17,7 +18,7 @@ std::string concatenateFlags(const std::vector<std::string>& flags) {
   // Remove last space
   if (!all_flags.empty()) all_flags.pop_back();
   return all_flags;
-}
+// }
 
 }  // namespace
 
@@ -71,6 +72,7 @@ std::pair<bool, std::string> ShellCompiler::compileAndLink(
                               " " + concatenateFlags(options) + " " +
                               source_path + " " + output_flag_ + " " +
                               output_path;
+  std::cout<<build_command;
   ShellCommand sc(build_command);
   return sc.result();
 }
