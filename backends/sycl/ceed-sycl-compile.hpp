@@ -23,15 +23,15 @@ int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule
 // template <class SyclKernel_t>
 // int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel);
 
+// May revert this back to single pointer
 template <class SyclKernel_t>
-int CeedGetKernel_Sycl(Ceed ceed, SyclModule_t sycl_module, std::string kernel_name, SyclKernel_t *sycl_kernel) {
+int CeedGetKernel_Sycl(Ceed ceed, SyclModule_t sycl_module, std::string kernel_name, SyclKernel_t **sycl_kernel) {
   //try {
-    std::cout<<"\n Entered GetKernel\n";
+    std::cout<<"\n Entered GetKernel";
     void *kernel_ptr = sycl_module->getFunction2(kernel_name);
-    std::cout<<"\n Kernel pointer retrieved\n";
-    SyclKernel_t *temp = reinterpret_cast<SyclKernel_t*>(kernel_ptr);
-    std::cout<<"\n Kernel pointer recast\n";
-    sycl_kernel = temp;
+    // std::cout<<"\n Kernel pointer retrieved";
+    *sycl_kernel = reinterpret_cast<SyclKernel_t*>(kernel_ptr);
+    // std::cout<<"\n Kernel pointer recast\n";
   //} catch (const std::exception& e) {
   //  return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   //}
