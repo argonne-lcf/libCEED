@@ -135,6 +135,7 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
   const auto [build_success, build_message] = compiler.compileAndLink(source_file_path,object_file_path,flags);
   // Q: Should we always output the compiler output in verbose/debug mode?
   if (!build_success) return CeedError((ceed), CEED_ERROR_BACKEND, build_message.c_str());
+  output_path = object_file_path;
   return CEED_ERROR_SUCCESS;
 }
 
@@ -145,8 +146,8 @@ static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, con
                                SyclModule_t* sycl_module) {
   try {
     *sycl_module =  prtc::DynamicLibrary::open(path);
-    std::string check_path = (*sycl_module)->path();
-    std::cout<<"\n Module created from path "<<check_path<<std::endl;
+    // std::string check_path = (*sycl_module)->path();
+    // std::cout<<"\n Module loaded from path"<<check_path<<std::endl;
   } catch (const std::exception& e) {
     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }

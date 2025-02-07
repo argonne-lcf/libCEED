@@ -86,9 +86,10 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // This needs to be revisited if all qfunctions require this.
   // code << "__attribute__((intel_reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << "))) extern \"C\" void " << kernel_name
   code << "#include <vector>\n\n";
+  code << "#include <iostream>\n\n";
   code << "class CeedQFunction_" << qf_name_view << ";\n\n";
   code << "extern \"C\" void " << kernel_name
-       << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx,  CeedInt Q, Fields_Sycl *fields) {\n";
+       << "(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx, CeedInt Q, Fields_Sycl *fields) {\n";
 
   // OpenCL doesn't allow for structs with pointers.
   // We will need to pass all of the arguments individually.
@@ -114,6 +115,9 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   code << "  if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};\n\n";
 
   // Begin kernel function body
+  code << "  " << "std::cout<<\"Kernel range = \" << kernel_range.get_global_range()[0];\n";
+  code << "  " << "std::cout<<\"Kernel range = \" << kernel_range.get_local_range()[0];\n";
+  code << "  " << "std::cout<<\"Q = \" << Q;\n";
   code << "  "
        << "sycl_queue.parallel_for<CeedQFunction_" << qf_name_view << ">(kernel_range, e, "
        << "[=](sycl::nd_item<1> item) {\n";
@@ -147,19 +151,19 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // Load inputs
   code << "      // -- Load inputs\n";
   for (CeedInt i = 0; i < num_input_fields; i++) {
-    code << "      readQuads<" << input_sizes[i] << ">(q, Q, "
+    code << "       readQuads<" << input_sizes[i] << ">(q, Q, "
          << "fields_inputs[" << i << "], U_" << i << ");\n";
   }
   code << "\n";
 
   // QFunction
   code << "      // -- Call QFunction\n";
-  code << "      " << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
+  code << "      //" << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
 
   // Write outputs
   code << "      // -- Write outputs\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
-    code << "      writeQuads<" << output_sizes[i] << ">(q, Q, "
+    code << "    //  writeQuads<" << output_sizes[i] << ">(q, Q, "
          << "V_" << i << ", fields_outputs[" << i << "]);\n";
   }
   code << "    }\n";

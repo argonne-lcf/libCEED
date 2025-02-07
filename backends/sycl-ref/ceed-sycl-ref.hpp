@@ -68,7 +68,9 @@ typedef struct {
   CeedScalar *d_q_weight;
 } CeedBasisNonTensor_Sycl;
 
-using SyclQFunctionKernel_t = std::function<void(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl*)>;
+// using SyclQFunctionKernel_t = std::function<void(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl*)>;
+// using SyclQFunctionKernel_t = std::function<void(void)>;
+typedef void SyclQFunctionKernel_t(sycl::queue&, sycl::nd_range<1>, void*, CeedInt, Fields_Sycl*);
 
 typedef struct {
   SyclModule_t sycl_module;

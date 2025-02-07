@@ -20,6 +20,58 @@
 
 #define WG_SIZE_QF 384
 
+class CeedQFunction_setup;
+
+extern "C" void CeedKernelSyclRefQFunction_setup(sycl::queue &sycl_queue, sycl::nd_range<1> kernel_range, void *ctx, CeedInt Q, Fields_Sycl *fields) {
+  const CeedScalar *fields_inputs[2];
+  fields_inputs[0] = fields->inputs[0];
+  fields_inputs[1] = fields->inputs[1];
+  CeedScalar *fields_outputs[1];
+  fields_outputs[0] = fields->outputs[0];
+
+  std::vector<sycl::event> e;
+  if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};
+
+  sycl_queue.parallel_for<CeedQFunction_setup>(kernel_range, e, [=](sycl::nd_item<1> item) {
+    // Input fields
+    CeedScalar U_0[1];
+    CeedScalar U_1[1];
+    const CeedScalar *inputs[2] = {U_0, U_1};
+
+    // Output fields
+    CeedScalar V_0[1];
+    CeedScalar *outputs[1] = {V_0};
+
+    const CeedInt q = item.get_global_linear_id();
+
+    if(q < Q) { 
+
+      // -- Load inputs
+      // readQuads<1>(q, Q, fields_inputs[0], U_0);
+      // readQuads<1>(q, Q, fields_inputs[1], U_1);
+
+      // -- Call QFunction
+      // setup(ctx, 1, inputs, outputs);
+
+      // -- Write outputs
+      // writeQuads<1>(q, Q, V_0, fields_outputs[0]);
+    }
+  });
+}
+
+#include "../sycl/libprtc/prtc.h"
+static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, const sycl::device &sycl_device, const std::string& path,
+                               SyclModule_t* sycl_module) {
+  try {
+    *sycl_module =  prtc::DynamicLibrary::open(path);
+    std::string check_path = (*sycl_module)->path();
+    std::cout<<"\n Module loaded from path"<<check_path<<std::endl;
+  } catch (const std::exception& e) {
+    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
+  }
+  return CEED_ERROR_SUCCESS;
+}
+
 //------------------------------------------------------------------------------
 // Apply QFunction
 //------------------------------------------------------------------------------
@@ -55,9 +107,11 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   //   CeedCallBackend(CeedVectorGetArrayWrite(*V_i, CEED_MEM_DEVICE, &output_i));
   //   ++V_i;
   // }
+  std::cout << " Number of input fields = "<<num_input_fields<<"\n";
   for (CeedInt i = 0; i < num_input_fields; i++) {
     CeedCallBackend(CeedVectorGetArrayRead(U[i], CEED_MEM_DEVICE, &impl->fields.inputs[i]));
   }
+  std::cout << " Number of output fields = "<<num_output_fields<<"\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
     CeedCallBackend(CeedVectorGetArrayWrite(V[i], CEED_MEM_DEVICE, &impl->fields.outputs[i]));
   }
@@ -76,7 +130,38 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   // Call launcher function that executes kernel
   // Pass in nd_range as second argument
   // Pass in vector of events as third argument
+  /*
+  std::string module_path = (impl->sycl_module)->path();
+  std::cout<<"\n Loading Module from library";
+  SyclModule_t my_module =  prtc::DynamicLibrary::open(module_path);
+  // CeedLoadModule_Sycl(ceed, ceed_Sycl->sycl_context, ceed_Sycl->sycl_device, module_path, &impl->sycl_module);
+  // std::string module_path = (impl->sycl_module)->path();
+  std::cout<<"\n Module loaded from path"<<module_path<<std::endl;
+  std::string_view  qf_name_view(impl->qfunction_name);
+  const std::string kernel_name = "CeedKernelSyclRefQFunction_" + std::string(qf_name_view);
+  std::cout<<"\n Loading Kernel "<<kernel_name<<" from module";
+  void *kernel_ptr = my_module->getFunction2(kernel_name);
+  std::cout<<"\n Kernel pointer retrieved";    
+  // SyclQFunctionKernel_t *my_QFunction = new SyclQFunctionKernel_t(1);
+  SyclQFunctionKernel_t *my_QFunction = reinterpret_cast<SyclQFunctionKernel_t*>(kernel_ptr);
+  std::cout<<"\n Kernel pointer recast\n";
+  */
+  // CeedGetKernel_Sycl<SyclQFunctionKernel_t>(ceed, impl->sycl_module, kernel_name, &impl->QFunction);
+  std::cout<<"\n Launching QFunction kernel\n";
+  // std::function<int(int)> *test_fun;
+  if(impl->QFunction==NULL) {
+    return CeedError((ceed), CEED_ERROR_BACKEND, "Kernel function is NULL\n");
+  }
+  // Fields_Sycl fields = impl->fields;
+  // if(!fields.inputs) {
+  //   return CeedError((ceed), CEED_ERROR_BACKEND, "Impl fields is NULL\n");
+  // }
+  // std::cout<<" QFunction pointer being deleted\n";
+  // delete impl->QFunction;
+  // CeedKernelSyclRefQFunction_setup(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
   (*impl->QFunction)(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
+  // (*my_QFunction)(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
+  std::cout<<" QFunction kernel successful\n";
 
   // Restore vectors
   // U_i = U;
@@ -111,7 +196,7 @@ static int CeedQFunctionDestroy_Sycl(CeedQFunction qf) {
 
   CeedCallBackend(CeedQFunctionGetData(qf, &impl));
   CeedCallBackend(CeedQFunctionGetCeed(qf, &ceed));
-  delete impl->QFunction;
+  // delete impl->QFunction;
   // delete impl->sycl_module;
   CeedCallBackend(CeedFree(&impl));
   CeedCallBackend(CeedDestroy(&ceed));

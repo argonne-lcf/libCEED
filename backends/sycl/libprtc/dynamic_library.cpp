@@ -11,9 +11,8 @@
 namespace prtc {
 
 std::shared_ptr<DynamicLibrary> DynamicLibrary::open(const std::string& path) {
-  std::cout<<"\n Creating Module from path "<<path<<std::endl;
   std::shared_ptr<DynamicLibrary> dyn_lib = std::make_shared<DynamicLibrary>(path);
-  std::cout<<"\n Module created from path "<<dyn_lib->path()<<std::endl;
+  std::cout<<"\n Module opened from path "<<dyn_lib->path();
   return dyn_lib;
 }
 
@@ -25,10 +24,11 @@ DynamicLibrary::DynamicLibrary(const std::string& path)
         "DynamicLibrary: failed to load " + path + "\n" + dlerror_message;
     throw std::runtime_error(error_message);
   }
-  std::cout<<"\n Module created from path "<<path<<std::endl;
 }
 
-DynamicLibrary::~DynamicLibrary() { dlclose(handle_); }
+// May need to revert this
+// DynamicLibrary::~DynamicLibrary() { dlclose(handle_); }
+DynamicLibrary::~DynamicLibrary() { }
 
 std::shared_ptr<prtc::DynamicLibrary> DynamicLibrary::share() {
   return shared_from_this();
@@ -37,13 +37,9 @@ std::shared_ptr<prtc::DynamicLibrary> DynamicLibrary::share() {
 std::string DynamicLibrary::path() const { return path_; }
 
 void* DynamicLibrary::getSymbol(const std::string& name) const {
-  std::cout<<"\n Entered GetSymbol\n";
-  std::cout<<"Looking for symbol " << name << " in path: " << path_ <<"\n";
   void* symbol = dlsym(handle_, name.c_str());
-  std::cout<<"\n Received Symbol\n";
   if (!symbol) {
     char* dlerror_message = dlerror();
-    std::cout<<"Looking in path: " << path_ <<"\n";
     std::string error_message = "DynamicLibrary: failed to find symbol " +
                                 name + " in " + path_ + "\n" + dlerror_message;
     throw std::runtime_error(error_message);

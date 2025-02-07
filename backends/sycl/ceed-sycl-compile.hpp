@@ -23,6 +23,7 @@ int CeedBuildModule_Sycl(Ceed ceed, const std::string &kernel_source, SyclModule
 // template <class SyclKernel_t>
 // int CeedGetKernel_Sycl(Ceed ceed, const SyclModule_t sycl_module, const std::string &kernel_name, SyclKernel_t *sycl_kernel);
 
+// May revert this back to single pointer
 template <class SyclKernel_t>
 int CeedGetKernel_Sycl(Ceed ceed, SyclModule_t sycl_module, std::string kernel_name, SyclKernel_t **sycl_kernel) {
   try {
