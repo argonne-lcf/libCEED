@@ -107,11 +107,11 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   //   CeedCallBackend(CeedVectorGetArrayWrite(*V_i, CEED_MEM_DEVICE, &output_i));
   //   ++V_i;
   // }
-  std::cout << " Number of input fields = "<<num_input_fields<<"\n";
+  // std::cout << " Number of input fields = "<<num_input_fields<<"\n";
   for (CeedInt i = 0; i < num_input_fields; i++) {
     CeedCallBackend(CeedVectorGetArrayRead(U[i], CEED_MEM_DEVICE, &impl->fields.inputs[i]));
   }
-  std::cout << " Number of output fields = "<<num_output_fields<<"\n";
+  // std::cout << " Number of output fields = "<<num_output_fields<<"\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
     CeedCallBackend(CeedVectorGetArrayWrite(V[i], CEED_MEM_DEVICE, &impl->fields.outputs[i]));
   }
@@ -147,7 +147,7 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   std::cout<<"\n Kernel pointer recast\n";
   */
   // CeedGetKernel_Sycl<SyclQFunctionKernel_t>(ceed, impl->sycl_module, kernel_name, &impl->QFunction);
-  std::cout<<"\n Launching QFunction kernel\n";
+  // std::cout<<"\n Launching QFunction kernel\n";
   // std::function<int(int)> *test_fun;
   if(impl->QFunction==NULL) {
     return CeedError((ceed), CEED_ERROR_BACKEND, "Kernel function is NULL\n");
@@ -161,7 +161,7 @@ static int CeedQFunctionApply_Sycl(CeedQFunction qf, CeedInt Q, CeedVector *U, C
   // CeedKernelSyclRefQFunction_setup(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
   (*impl->QFunction)(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
   // (*my_QFunction)(ceed_Sycl->sycl_queue, kernel_range, context_data, Q, &impl->fields);
-  std::cout<<" QFunction kernel successful\n";
+  // std::cout<<" QFunction kernel successful\n";
 
   // Restore vectors
   // U_i = U;

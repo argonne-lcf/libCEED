@@ -67,10 +67,10 @@ static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_sourc
 static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
 
   // flags = {std::string("-cl-std=CL3.0"), std::string("-Dint32_t=int")};
-  flags = {std::string("-fsycl"), std::string("-fno-sycl-id-queries-fit-in-int")};
+  flags = {std::string("-O3 -fsycl"), std::string("-fno-sycl-id-queries-fit-in-int")};
   // TODO : Add AOT flags and other optimization flags
   // flags.push_back(std::string("-O3"));
-  // flags.push_back(std::string("-fsycl-targets=spir64_gen -Xsycl-target-backend \"-device pvc\" "))
+  flags.push_back(std::string("-fsycl-targets=spir64_gen -Xsycl-target-backend \"-device pvc\" "));
   
   return CEED_ERROR_SUCCESS;
 }

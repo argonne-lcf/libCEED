@@ -12,7 +12,7 @@ namespace prtc {
 
 std::shared_ptr<DynamicLibrary> DynamicLibrary::open(const std::string& path) {
   std::shared_ptr<DynamicLibrary> dyn_lib = std::make_shared<DynamicLibrary>(path);
-  std::cout<<"\n Module opened from path "<<dyn_lib->path();
+  // std::cout<<"\n Module opened from path "<<dyn_lib->path();
   return dyn_lib;
 }
 

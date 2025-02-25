@@ -28,12 +28,11 @@ template <class SyclKernel_t>
 int CeedGetKernel_Sycl(Ceed ceed, SyclModule_t sycl_module, std::string kernel_name, SyclKernel_t **sycl_kernel) {
   try {
     *sycl_kernel = sycl_module->getFunction<SyclKernel_t*>(kernel_name);
-    // std::cout<<"\n Entered GetKernel\n";
+    // std::cout<<"\n Entered GetKernel";
     // void *kernel_ptr = sycl_module->getFunction2(kernel_name);
-    // std::cout<<"\n Kernel pointer retrieved\n";
-    // SyclKernel_t *temp = reinterpret_cast<SyclKernel_t*>(kernel_ptr);
+    // std::cout<<"\n Kernel pointer retrieved";
+    // *sycl_kernel = reinterpret_cast<SyclKernel_t*>(kernel_ptr);
     // std::cout<<"\n Kernel pointer recast\n";
-    // sycl_kernel = temp;
   } catch (const std::exception& e) {
    return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
