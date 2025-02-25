@@ -72,7 +72,7 @@ std::pair<bool, std::string> ShellCompiler::compileAndLink(
                               " " + concatenateFlags(options) + " " +
                               source_path + " " + output_flag_ + " " +
                               output_path;
-  std::cout<<build_command;
+  // std::cout<<build_command;
   ShellCommand sc(build_command);
   return sc.result();
 }
