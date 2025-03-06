@@ -64,8 +64,8 @@ static int CeedLoadModule_Sycl(Ceed ceed, const sycl::context &sycl_context, con
                                SyclModule_t* sycl_module) {
   try {
     *sycl_module =  prtc::DynamicLibrary::open(path);
-    std::string check_path = (*sycl_module)->path();
-    std::cout<<"\n Module loaded from path"<<check_path<<std::endl;
+    // std::string check_path = (*sycl_module)->path();
+    // std::cout<<"\n Module loaded from path"<<check_path<<std::endl;
   } catch (const std::exception& e) {
     return CeedError((ceed), CEED_ERROR_BACKEND, e.what());
   }
