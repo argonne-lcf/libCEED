@@ -9,6 +9,13 @@
 /// Internal header for SYCL backend QFunction read/write kernels
 #include <ceed/types.h>
 
+#define sqrt(x) sycl::sqrt(x)
+#define  exp(x) sycl::exp(x)
+#define  log(x) sycl::log(x)
+#define  cos(x) sycl::cos(x)
+#define  pow(x,y) sycl::pow(x,y)
+#define log1p(x) sycl::log1p(x)
+
 //------------------------------------------------------------------------------
 // Read from quadrature points
 //------------------------------------------------------------------------------
