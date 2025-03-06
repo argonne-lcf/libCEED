@@ -120,7 +120,7 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
   // code << "  " << "std::cout<<\"Q = \" << Q;\n";
   code << "  "
        << "sycl_queue.parallel_for<CeedQFunction_" << qf_name_view << ">(kernel_range, e, "
-       << "[=](sycl::nd_item<1> item) {\n";
+       << "[=](sycl::nd_item<1> item) [[intel::reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << ")]] {\n";
 
   // Inputs
   code << "    // Input fields\n";
@@ -158,12 +158,12 @@ extern "C" int CeedQFunctionBuildKernel_Sycl(CeedQFunction qf) {
 
   // QFunction
   code << "      // -- Call QFunction\n";
-  code << "      //" << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
+  code << "      " << qf_name_view << "(ctx, 1, inputs, outputs);\n\n";
 
   // Write outputs
   code << "      // -- Write outputs\n";
   for (CeedInt i = 0; i < num_output_fields; i++) {
-    code << "      //  writeQuads<" << output_sizes[i] << ">(q, Q, "
+    code << "      writeQuads<" << output_sizes[i] << ">(q, Q, "
          << "V_" << i << ", fields_outputs[" << i << "]);\n";
   }
   code << "    }\n";
