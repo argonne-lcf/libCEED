@@ -50,6 +50,50 @@ kernel void Interp(const CeedInt num_elem, global const CeedScalar *restrict d_i
   }
 }
 
+extern "C" void Interp(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_range, const CeedInt num_elem, const CeedScalar *restrict d_interp_1d, const CeedScalar *restrict d_U,
+                       CeedScalar *restrict d_V) {  
+  
+  std::vector<sycl::event> e;
+  if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};
+
+  sycl_queue.submit([&](sycl::handler &cgh) {
+    cgh.depends_on(e);
+
+    sycl::local_accessor<CeedScalar> scratch_WG(BASIS_INTERP_SCRATCH_SIZE);
+    sycl::local_accessor<CeedScalar> s_B(BASIS_P_1D * BASIS_Q_1D);
+
+    cgh.parallel_for<CeedSyclSharedBasis_Interp>(kernel_range, [=](sycl::nd_item<3> item) {
+      SharedData_Sycl data;
+      data.item_id_x = item.get_local_id(0);
+      data.item_id_y = item.get_local_id(1);
+      data.item_id_z = item.get_global_id(2);
+      data.scratch = scratch + scratch_WG + data.item_id_z * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      
+      CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
+      CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
+      
+      loadMatrix<BASIS_P_1D, BASIS_Q_1D> (data, d_interp_1d, s_B);
+      item.barrier(sycl::access::fence_space::local_space);
+      
+      if (BASIS_DIM == 1) {
+        ReadElementStrided1d<BASIS_NUM_COMP, BASIS_P_1D>(data, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
+        Interp1d<BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D>(data, r_U, s_B, r_V, elem_scratch);
+        WriteElementStrided1d<BASIS_NUM_COMP, BASIS_Q_1D>(data, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V, d_V);
+      } else if (BASIS_DIM == 2) {
+        ReadElementStrided2d<BASIS_NUM_COMP, BASIS_P_1D>(data, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
+        InterpTensor2d<BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D>(data, r_U, s_B, r_V, elem_scratch);
+        WriteElementStrided2d<BASIS_NUM_COMP, BASIS_Q_1D>(data, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V, d_V);
+      } else if (BASIS_DIM == 3) {
+        ReadElementStrided3d<BASIS_NUM_COMP, BASIS_P_1D>(data, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
+        InterpTensor3d<BASIS_NUM_COMP, BASIS_P_1D, BASIS_Q_1D>(data, r_U, s_B, r_V, elem_scratch);
+        WriteElementStrided3d<BASIS_NUM_COMP, BASIS_Q_1D>(data, num_elem, 1, BASIS_NUM_QPTS * num_elem, BASIS_NUM_QPTS, r_V, d_V);
+      }
+
+    });
+  });
+
+}
+
 kernel void InterpTranspose(const CeedInt num_elem, global const CeedScalar *restrict d_interp_1d, global const CeedScalar *restrict d_U,
                             global CeedScalar *restrict d_V) {
   // local size:
