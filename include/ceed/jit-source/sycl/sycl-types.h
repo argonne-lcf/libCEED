@@ -11,6 +11,7 @@
 #define CEED_SYCL_TYPES_H
 
 #include <ceed/types.h>
+#include <sycl/sycl.hpp>
 
 #define CEED_SYCL_NUMBER_FIELDS 16
 
@@ -35,5 +36,15 @@ typedef struct {
   CeedInt       *outputs[CEED_SYCL_NUMBER_FIELDS];
 } FieldsInt_Sycl;
 #endif
+
+typedef struct {
+  // sycl::nd_item<3> work_item;
+  CeedInt item_id_x;
+  CeedInt item_id_y;
+  CeedInt item_id_z;
+  CeedInt item_id;
+  CeedInt group_size;
+  CeedScalar *scratch;
+} SharedData_Sycl;
 
 #endif  // CEED_SYCL_TYPES_H

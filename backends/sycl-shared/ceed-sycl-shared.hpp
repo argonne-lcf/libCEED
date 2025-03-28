@@ -14,16 +14,20 @@
 #include "../sycl/ceed-sycl-common.hpp"
 #include "../sycl/ceed-sycl-compile.hpp"
 
+typedef void SyclSharedInterpKernel_t(sycl::queue&, sycl::nd_range<3>, const CeedInt, const CeedScalar*, const CeedScalar*, CeedScalar*);
+typedef void SyclSharedGradKernel_t  (sycl::queue&, sycl::nd_range<3>, const CeedInt, const CeedScalar*, const CeedScalar*, const CeedScalar*, CeedScalar*);
+typedef void SyclSharedWeightKernel_t(sycl::queue&, sycl::nd_range<3>, const CeedInt, const CeedScalar*, CeedScalar*);
+
 typedef struct {
   CeedInt       interp_local_range[3];
   CeedInt       grad_local_range[3];
   CeedInt       weight_local_range[3];
-  SyclModule_t *sycl_module;
-  sycl::kernel *interp_kernel;
-  sycl::kernel *interp_transpose_kernel;
-  sycl::kernel *grad_kernel;
-  sycl::kernel *grad_transpose_kernel;
-  sycl::kernel *weight_kernel;
+  SyclModule_t sycl_module;
+  SyclSharedInterpKernel_t *interp_kernel;
+  SyclSharedInterpKernel_t *interp_transpose_kernel;
+  SyclSharedGradKernel_t   *grad_kernel;
+  SyclSharedGradKernel_t   *grad_transpose_kernel;
+  SyclSharedWeightKernel_t *weight_kernel;
   CeedScalar   *d_interp_1d;
   CeedScalar   *d_grad_1d;
   CeedScalar   *d_collo_grad_1d;  // eliminate

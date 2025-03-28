@@ -31,7 +31,7 @@ static int ComputeLocalRange(Ceed ceed, CeedInt dim, CeedInt thread_1d, CeedInt 
 }
 
 //------------------------------------------------------------------------------
-// Apply basis
+// Apply tensor basis
 //------------------------------------------------------------------------------
 int CeedBasisApplyTensor_Sycl_shared(CeedBasis basis, const CeedInt num_elem, CeedTransposeMode t_mode, CeedEvalMode eval_mode, CeedVector u,
                                      CeedVector v) {
@@ -61,16 +61,17 @@ int CeedBasisApplyTensor_Sycl_shared(CeedBasis basis, const CeedInt num_elem, Ce
       sycl::range<3>    global_range(group_count * lrange[2], lrange[1], lrange[0]);
       sycl::nd_range<3> kernel_range(global_range, local_range);
       //-----------
-      sycl::kernel *interp_kernel = (t_mode == CEED_TRANSPOSE) ? impl->interp_transpose_kernel : impl->interp_kernel;
+      SyclSharedInterpKernel_t *interp_kernel = (t_mode == CEED_TRANSPOSE) ? impl->interp_transpose_kernel : impl->interp_kernel;
 
-      std::vector<sycl::event> e;
+      (*interp_kernel)(ceed_Sycl->sycl_queue, kernel_range, num_elem, impl->d_interp_1d, d_u, d_v);
+      // std::vector<sycl::event> e;
 
-      if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
-      ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(e);
-        cgh.set_args(num_elem, impl->d_interp_1d, d_u, d_v);
-        cgh.parallel_for(kernel_range, *interp_kernel);
-      });
+      // if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
+      // ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+      //   cgh.depends_on(e);
+      //   cgh.set_args(num_elem, impl->d_interp_1d, d_u, d_v);
+      //   cgh.parallel_for(kernel_range, *interp_kernel);
+      // });
 
     } break;
     case CEED_EVAL_GRAD: {
@@ -82,18 +83,19 @@ int CeedBasisApplyTensor_Sycl_shared(CeedBasis basis, const CeedInt num_elem, Ce
       sycl::range<3>    global_range(group_count * lrange[2], lrange[1], lrange[0]);
       sycl::nd_range<3> kernel_range(global_range, local_range);
       //-----------
-      sycl::kernel     *grad_kernel = (t_mode == CEED_TRANSPOSE) ? impl->grad_transpose_kernel : impl->grad_kernel;
+      SyclSharedGradKernel_t *grad_kernel = (t_mode == CEED_TRANSPOSE) ? impl->grad_transpose_kernel : impl->grad_kernel;
       const CeedScalar *d_grad_1d   = (impl->d_collo_grad_1d) ? impl->d_collo_grad_1d : impl->d_grad_1d;
 
-      std::vector<sycl::event> e;
+      (*grad_kernel)(ceed_Sycl->sycl_queue, kernel_range, num_elem, impl->d_interp_1d, d_grad_1d, d_u, d_v );
+      // std::vector<sycl::event> e;
 
-      if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
+      // if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
 
-      ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(e);
-        cgh.set_args(num_elem, impl->d_interp_1d, d_grad_1d, d_u, d_v);
-        cgh.parallel_for(kernel_range, *grad_kernel);
-      });
+      // ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+      //   cgh.depends_on(e);
+      //   cgh.set_args(num_elem, impl->d_interp_1d, d_grad_1d, d_u, d_v);
+      //   cgh.parallel_for(kernel_range, *grad_kernel);
+      // });
     } break;
     case CEED_EVAL_WEIGHT: {
       CeedInt       *lrange         = impl->weight_local_range;
@@ -104,16 +106,17 @@ int CeedBasisApplyTensor_Sycl_shared(CeedBasis basis, const CeedInt num_elem, Ce
       sycl::range<3>    global_range(group_count * lrange[2], lrange[1], lrange[0]);
       sycl::nd_range<3> kernel_range(global_range, local_range);
       //-----------
-      std::vector<sycl::event> e;
+      // std::vector<sycl::event> e;
 
       CeedCheck(impl->d_q_weight_1d, ceed, CEED_ERROR_BACKEND, "%s not supported; q_weight_1d not set", CeedEvalModes[eval_mode]);
-      if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
+      (*impl->weight_kernel)(ceed_Sycl->sycl_queue, kernel_range, num_elem, impl->d_q_weight_1d, d_v);
+      // if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
 
-      ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.depends_on(e);
-        cgh.set_args(num_elem, impl->d_q_weight_1d, d_v);
-        cgh.parallel_for(kernel_range, *(impl->weight_kernel));
-      });
+      // ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+      //   cgh.depends_on(e);
+      //   cgh.set_args(num_elem, impl->d_q_weight_1d, d_v);
+      //   cgh.parallel_for(kernel_range, *(impl->weight_kernel));
+      // });
     } break;
     case CEED_EVAL_NONE: /* handled separately below */
       break;
@@ -149,12 +152,12 @@ static int CeedBasisDestroy_Sycl_shared(CeedBasis basis) {
   CeedCallSycl(ceed, sycl::free(impl->d_grad_1d, data->sycl_context));
   CeedCallSycl(ceed, sycl::free(impl->d_collo_grad_1d, data->sycl_context));
 
-  delete impl->interp_kernel;
-  delete impl->interp_transpose_kernel;
-  delete impl->grad_kernel;
-  delete impl->grad_transpose_kernel;
-  delete impl->weight_kernel;
-  delete impl->sycl_module;
+  // delete impl->interp_kernel;
+  // delete impl->interp_transpose_kernel;
+  // delete impl->grad_kernel;
+  // delete impl->grad_transpose_kernel;
+  // delete impl->weight_kernel;
+  // delete impl->sycl_module;
 
   CeedCallBackend(CeedFree(&impl));
   CeedCallBackend(CeedDestroy(&ceed));
@@ -262,11 +265,12 @@ int CeedBasisCreateTensorH1_Sycl_shared(CeedInt dim, CeedInt P_1d, CeedInt Q_1d,
   CeedCallBackend(CeedBuildModule_Sycl(ceed, basis_kernel_source, &impl->sycl_module, jit_constants));
 
   // Load kernel functions
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, "Interp", &impl->interp_kernel));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, "InterpTranspose", &impl->interp_transpose_kernel));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, "Grad", &impl->grad_kernel));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, "GradTranspose", &impl->grad_transpose_kernel));
-  CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, "Weight", &impl->weight_kernel));
+  CeedCallBackend(CeedGetKernel_Sycl<SyclSharedInterpKernel_t>(ceed, impl->sycl_module, "Interp", &impl->interp_kernel));
+  CeedCallBackend(CeedGetKernel_Sycl<SyclSharedInterpKernel_t>(ceed, impl->sycl_module, "InterpTranspose", &impl->interp_transpose_kernel));
+
+  CeedCallBackend(CeedGetKernel_Sycl<SyclSharedGradKernel_t>(ceed, impl->sycl_module, "Grad", &impl->grad_kernel));
+  CeedCallBackend(CeedGetKernel_Sycl<SyclSharedGradKernel_t>(ceed, impl->sycl_module, "GradTranspose", &impl->grad_transpose_kernel));
+  CeedCallBackend(CeedGetKernel_Sycl<SyclSharedWeightKernel_t>(ceed, impl->sycl_module, "Weight", &impl->weight_kernel));
 
   // Clean-up
   CeedCallBackend(CeedFree(&basis_kernel_path));
