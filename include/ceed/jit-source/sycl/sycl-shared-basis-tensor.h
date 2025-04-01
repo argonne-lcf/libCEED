@@ -12,13 +12,13 @@
 #include "sycl-shared-basis-read-write-templates.h"
 #include "sycl-shared-basis-tensor-templates.h"
 
-class CeedSyclSharedBasis_Interp;
-class CeedSyclSharedBasis_InterpTranspose;
-class CeedSyclSharedBasis_InterpTransposeAdd;
-class CeedSyclSharedBasis_Grad;
-class CeedSyclSharedBasis_GradTranspose;
-class CeedSyclSharedBasis_GradTransposeAdd;
-class CeedSyclSharedBasis_Weight;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_Interp;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_InterpTranspose;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_InterpTransposeAdd;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_Grad;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_GradTranspose;
+template <int dim, int P, int Q> class CeedSyclSharedBasis_GradTransposeAdd;
+template <int dim, int Q> class CeedSyclSharedBasis_Weight;
 
 //
 // BASIS_NUM_NODES = CeedIntPow(BASIS_P_1D,DIM)
@@ -70,18 +70,18 @@ extern "C" void Interp(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_range, 
     sycl::local_accessor<CeedScalar> s_memS(BASIS_INTERP_SCRATCH_SIZE, cgh);
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh);
 
-    cgh.parallel_for<CeedSyclSharedBasis_Interp>(kernel_range, [=](sycl::nd_item<3> item) {
+    cgh.parallel_for<CeedSyclSharedBasis_Interp<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
@@ -89,7 +89,7 @@ extern "C" void Interp(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_range, 
       // load interp_1d into shared memory
       loadMatrix<BASIS_P_1D, BASIS_Q_1D> (data, d_interp_1d, s_B);
       item.barrier(sycl::access::fence_space::local_space);
-      sycl::group_barrier(item.get_group());
+      // sycl::group_barrier(item.get_group());
       
       if (BASIS_DIM == 1) {
         ReadElementStrided1d<BASIS_NUM_COMP, BASIS_P_1D>(data, num_elem, 1, BASIS_NUM_NODES * num_elem, BASIS_NUM_NODES, d_U, r_U);
@@ -156,18 +156,18 @@ extern "C" void InterpTranspose(sycl::queue &sycl_queue, sycl::nd_range<3> kerne
     sycl::local_accessor<CeedScalar> s_memS(BASIS_INTERP_SCRATCH_SIZE, cgh);
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh);
     
-    cgh.parallel_for<CeedSyclSharedBasis_InterpTranspose>(kernel_range, [=](sycl::nd_item<3> item) {     
+    cgh.parallel_for<CeedSyclSharedBasis_InterpTranspose<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {     
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
@@ -207,18 +207,18 @@ extern "C" void InterpTransposeAdd(sycl::queue &sycl_queue, sycl::nd_range<3> ke
     sycl::local_accessor<CeedScalar> s_memS(BASIS_INTERP_SCRATCH_SIZE, cgh);
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh);
     
-    cgh.parallel_for<CeedSyclSharedBasis_InterpTransposeAdd>(kernel_range, [=](sycl::nd_item<3> item) {
+    cgh.parallel_for<CeedSyclSharedBasis_InterpTransposeAdd<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
@@ -226,7 +226,7 @@ extern "C" void InterpTransposeAdd(sycl::queue &sycl_queue, sycl::nd_range<3> ke
       // load interp_1d into shared memory
       loadMatrix<BASIS_P_1D, BASIS_Q_1D> (data, d_interp_1d, s_B);
       item.barrier(sycl::access::fence_space::local_space);
-      sycl::group_barrier(item.get_group());
+      // sycl::group_barrier(item.get_group());
       
       if (BASIS_DIM == 1) {
         ReadElementStrided1d<BASIS_NUM_COMP, BASIS_Q_1D>(data, num_elem, 1,  BASIS_NUM_QPTS * num_elem,  BASIS_NUM_QPTS, d_U, r_U);
@@ -297,19 +297,19 @@ extern "C" void Grad(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_range, co
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh); // UMESH: Todo, don't allocate s_B for dimension 1
     sycl::local_accessor<CeedScalar> s_memG(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), cgh);
     
-    cgh.parallel_for<CeedSyclSharedBasis_Grad>(kernel_range, [=](sycl::nd_item<3> item) {
+    cgh.parallel_for<CeedSyclSharedBasis_Grad<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_G     = s_memG.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * BASIS_DIM * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
@@ -386,19 +386,19 @@ extern "C" void GradTranspose(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh); // UMESH: Todo, don't allocate s_B for dimension 1
     sycl::local_accessor<CeedScalar> s_memG(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), cgh);
     
-    cgh.parallel_for<CeedSyclSharedBasis_GradTranspose>(kernel_range, [=](sycl::nd_item<3> item) {
+    cgh.parallel_for<CeedSyclSharedBasis_GradTranspose<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_G     = s_memG.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * BASIS_DIM * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
@@ -440,19 +440,19 @@ extern "C" void GradTransposeAdd(sycl::queue &sycl_queue, sycl::nd_range<3> kern
     sycl::local_accessor<CeedScalar> s_memB(BASIS_P_1D * BASIS_Q_1D, cgh); // UMESH: Todo, don't allocate s_B for dimension 1
     sycl::local_accessor<CeedScalar> s_memG(BASIS_Q_1D * (BASIS_HAS_COLLOCATED_GRAD ? BASIS_Q_1D : BASIS_P_1D), cgh);
     
-    cgh.parallel_for<CeedSyclSharedBasis_GradTransposeAdd>(kernel_range, [=](sycl::nd_item<3> item) {
+    cgh.parallel_for<CeedSyclSharedBasis_GradTransposeAdd<BASIS_DIM,BASIS_P_1D,BASIS_Q_1D>>(kernel_range, [=](sycl::nd_item<3> item) {
       CeedScalar *scratch = s_memS.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_B     = s_memB.get_multi_ptr<sycl::access::decorated::yes>().get();
       CeedScalar *s_G     = s_memG.get_multi_ptr<sycl::access::decorated::yes>().get();
 
       SharedData_Sycl data;
       // data.work_item = item;
-      data.item_id_x = item.get_local_id(0);
+      data.item_id_x = item.get_local_id(2);
       data.item_id_y = item.get_local_id(1);
-      data.item_id_z = item.get_global_id(2);
+      data.item_id_z = item.get_global_id(0);
       data.item_id   = item.get_local_linear_id();
       data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
-      data.scratch = scratch + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
+      data.scratch = scratch + item.get_local_id(0) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);
       
       CeedScalar r_U[BASIS_NUM_COMP * BASIS_DIM * (BASIS_DIM > 2 ? BASIS_Q_1D : 1)];
       CeedScalar r_V[BASIS_NUM_COMP * (BASIS_DIM > 2 ? BASIS_P_1D : 1)];
@@ -508,11 +508,11 @@ extern "C" void Weight(sycl::queue &sycl_queue, sycl::nd_range<3> kernel_range, 
   std::vector<sycl::event> e;
   if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};
   
-  sycl_queue.parallel_for<CeedSyclSharedBasis_Weight>(kernel_range, e, [=](sycl::nd_item<3> item) {
+  sycl_queue.parallel_for<CeedSyclSharedBasis_Weight<BASIS_DIM,BASIS_Q_1D>>(kernel_range, e, [=](sycl::nd_item<3> item) {
     SharedData_Sycl data;
-    data.item_id_x = item.get_local_id(0);
+    data.item_id_x = item.get_local_id(2);
     data.item_id_y = item.get_local_id(1);
-    data.item_id_z = item.get_global_id(2);
+    data.item_id_z = item.get_global_id(0);
     data.item_id   = item.get_local_linear_id();
     data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);
     // data.scratch = scratch_WG + item.get_local_id(2) * T_1D * (BASIS_DIM > 1 ? T_1D : 1);

@@ -24,7 +24,7 @@ inline void ContractX1d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
 
   data.scratch[data.item_id_x] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
-  sycl::group_barrier(work_item.get_group());
+  // sycl::group_barrier(work_item.get_group());
 
   *V = 0.0;
   if (data.item_id_x < Q_1D) {
@@ -33,7 +33,7 @@ inline void ContractX1d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
-  sycl::group_barrier(work_item.get_group());
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ inline void ContractTransposeX1d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
 
   data.scratch[data.item_id_x] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
-  sycl::group_barrier(work_item.get_group());
+  // sycl::group_barrier(work_item.get_group());
 
   *V = 0.0;
   if (data.item_id_x < P_1D) {
@@ -55,7 +55,7 @@ inline void ContractTransposeX1d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
-  sycl::group_barrier(work_item.get_group());
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -126,6 +126,7 @@ inline void ContractX2d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
 
   data.scratch[data.item_id_x + data.item_id_y * T_1D] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 
   *V = 0.0;
   if (data.item_id_x < Q_1D && data.item_id_y < P_1D) {
@@ -134,6 +135,7 @@ inline void ContractX2d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -147,6 +149,7 @@ inline void ContractY2d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
 
   data.scratch[data.item_id_x + data.item_id_y * T_1D] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 
   *V = 0.0;
   if (data.item_id_x < Q_1D && data.item_id_y < Q_1D) {
@@ -155,6 +158,7 @@ inline void ContractY2d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -168,6 +172,7 @@ inline void ContractTransposeY2d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
 
   data.scratch[data.item_id_x + data.item_id_y * T_1D] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());  
 
   *V = 0.0;
   if (data.item_id_x < Q_1D && data.item_id_y < P_1D) {
@@ -176,6 +181,7 @@ inline void ContractTransposeY2d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -189,6 +195,7 @@ inline void ContractTransposeX2d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
 
   data.scratch[data.item_id_x + data.item_id_y * T_1D] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 
   *V = 0.0;
   if (data.item_id_x < P_1D && data.item_id_y < P_1D) {
@@ -197,6 +204,7 @@ inline void ContractTransposeX2d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -210,6 +218,7 @@ inline void ContractTransposeAddX2d(SharedData_Sycl &data, sycl::nd_item<3> &wor
 
   data.scratch[data.item_id_x + data.item_id_y * T_1D] = *U;
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 
   if (data.item_id_x < P_1D && data.item_id_y < P_1D) {
     for (CeedInt i = 0; i < Q_1D; i++) {
@@ -217,6 +226,7 @@ inline void ContractTransposeAddX2d(SharedData_Sycl &data, sycl::nd_item<3> &wor
     }
   }
   work_item.barrier(sycl::access::fence_space::local_space);
+  // sycl::group_barrier(work_item.get_group());
 }
 
 //------------------------------------------------------------------------------
@@ -311,6 +321,7 @@ inline void ContractX3d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
 
     V[k] = 0.0;
     if (data.item_id_x < Q_1D && data.item_id_y < P_1D) {
@@ -319,6 +330,7 @@ inline void ContractX3d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
@@ -339,6 +351,7 @@ inline void ContractY3d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
 
     V[k] = 0.0;
     if (data.item_id_x < Q_1D && data.item_id_y < Q_1D) {
@@ -347,6 +360,7 @@ inline void ContractY3d(SharedData_Sycl &data, sycl::nd_item<3> &work_item, cons
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
@@ -405,6 +419,7 @@ inline void ContractTransposeY3d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
 
     V[k] = 0.0;
     if (data.item_id_x < Q_1D && data.item_id_y < P_1D) {
@@ -413,6 +428,7 @@ inline void ContractTransposeY3d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
@@ -433,12 +449,15 @@ inline void ContractTransposeAddY3d(SharedData_Sycl &data, sycl::nd_item<3> &wor
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
+
     if (data.item_id_x < Q_1D && data.item_id_y < P_1D) {
       for (CeedInt i = 0; i < Q_1D; i++) {
         V[k] += r_B[i] * data.scratch[data.item_id_x + i * T_1D];  // Contract y direction
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
@@ -459,6 +478,8 @@ inline void ContractTransposeX3d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
+
     V[k] = 0.0;
     if (data.item_id_x < P_1D && data.item_id_y < P_1D) {
       for (CeedInt i = 0; i < Q_1D; i++) {
@@ -466,6 +487,7 @@ inline void ContractTransposeX3d(SharedData_Sycl &data, sycl::nd_item<3> &work_i
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
@@ -486,6 +508,7 @@ inline void ContractTransposeAddX3d(SharedData_Sycl &data, sycl::nd_item<3> &wor
   for (CeedInt k = 0; k < P_1D; k++) {
     data.scratch[data.item_id_x + data.item_id_y * T_1D] = U[k];
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
 
     if (data.item_id_x < P_1D && data.item_id_y < P_1D) {
       for (CeedInt i = 0; i < Q_1D; i++) {
@@ -493,6 +516,7 @@ inline void ContractTransposeAddX3d(SharedData_Sycl &data, sycl::nd_item<3> &wor
       }
     }
     work_item.barrier(sycl::access::fence_space::local_space);
+    // sycl::group_barrier(work_item.get_group());
   }
 }
 
