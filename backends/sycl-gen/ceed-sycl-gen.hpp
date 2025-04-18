@@ -13,12 +13,15 @@
 #include "../sycl/ceed-sycl-common.hpp"
 #include "../sycl/ceed-sycl-compile.hpp"
 
+// Signature : queue, kernel_range, num_elem, ctx, indices, fields, B, G, W
+typedef void SyclGenOperatorKernel_t(sycl::queue&, sycl::nd_range<3>, const CeedInt, void*, FieldsInt_Sycl*, Fields_Sycl*, Fields_Sycl*, Fields_Sycl*, CeedScalar *__restrict__);
+
 typedef struct {
   CeedInt         dim;
   CeedInt         Q_1d;
   CeedInt         max_P_1d;
-  SyclModule_t   *sycl_module;
-  sycl::kernel   *op;
+  SyclModule_t    sycl_module;
+  SyclGenOperatorKernel_t *op;
   FieldsInt_Sycl *indices;
   Fields_Sycl    *fields;
   Fields_Sycl    *B;

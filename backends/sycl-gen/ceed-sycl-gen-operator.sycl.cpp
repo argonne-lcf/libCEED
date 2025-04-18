@@ -142,16 +142,17 @@ static int CeedOperatorApplyAdd_Sycl_gen(CeedOperator op, CeedVector input_vec, 
   sycl::nd_range<3> kernel_range(global_range, local_range);
 
   //-----------
-  std::vector<sycl::event> e;
+  // std::vector<sycl::event> e;
 
-  if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
+  // if (!ceed_Sycl->sycl_queue.is_in_order()) e = {ceed_Sycl->sycl_queue.ext_oneapi_submit_barrier()};
 
-  CeedCallSycl(ceed, ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
-    cgh.depends_on(e);
-    cgh.set_args(num_elem, qf_impl->d_c, impl->indices, impl->fields, impl->B, impl->G, impl->W);
-    cgh.parallel_for(kernel_range, *(impl->op));
-  }));
-  CeedCallSycl(ceed, ceed_Sycl->sycl_queue.wait_and_throw());
+  // CeedCallSycl(ceed, ceed_Sycl->sycl_queue.submit([&](sycl::handler &cgh) {
+  //   cgh.depends_on(e);
+  //   cgh.set_args(num_elem, qf_impl->d_c, impl->indices, impl->fields, impl->B, impl->G, impl->W);
+  //   cgh.parallel_for(kernel_range, *(impl->op));
+  // }));
+  // CeedCallSycl(ceed, ceed_Sycl->sycl_queue.wait_and_throw());
+  (*impl->op)(ceed_Sycl->sycl_queue, kernel_range, num_elem, qf_impl->d_c, impl->indices, impl->fields, impl->B, impl->G, impl->W);
 
   // Restore input arrays
   for (CeedInt i = 0; i < num_input_fields; i++) {
