@@ -175,7 +175,7 @@ extern "C" void InterpTranspose(sycl::queue &sycl_queue, sycl::nd_range<3> kerne
       // load interp_1d into shared memory
       loadMatrix<BASIS_P_1D, BASIS_Q_1D> (data, d_interp_1d, s_B);
       item.barrier(sycl::access::fence_space::local_space);
-      sycl::group_barrier(item.get_group());
+      // sycl::group_barrier(item.get_group());
       
       if (BASIS_DIM == 1) {
         ReadElementStrided1d<BASIS_NUM_COMP, BASIS_Q_1D>(data, num_elem, 1,  BASIS_NUM_QPTS * num_elem,  BASIS_NUM_QPTS, d_U, r_U);

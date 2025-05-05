@@ -370,7 +370,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   code << "      data.item_id_z = item.get_global_id(0);\n";
   code << "      data.item_id   = item.get_local_linear_id();\n";
   code << "      data.group_size = item.get_local_range(0) * item.get_local_range(1) * item.get_local_range(2);\n";
-  code << "      CeedScalar *elem_scratch = scratch + item.get_local_id(0) * T_1D" << (dim > 1 ? "*T_1D" : "") << ";\n";
+  code << "      data.scratch = scratch + item.get_local_id(0) * T_1D" << (dim > 1 ? "*T_1D" : "") << ";\n";
 
   code << "\n      // -- Input field constants and basis data --\n";
   // Initialize constants, and matrices B and G
@@ -476,7 +476,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
         } else {
           bool has_collo_grad = basis_impl->d_collo_grad_1d;
           h_G.outputs[i]      = has_collo_grad ? basis_impl->d_collo_grad_1d : basis_impl->d_grad_1d;
-          code << "      CeedScalar *s_G_out_" << i << "[" << Q_1d * (has_collo_grad ? Q_1d : P_1d) << "];\n";
+          code << "      CeedScalar *s_G_out_" << i << " = smem_G_out_" << i << ".get_multi_ptr<sycl::access::decorated::yes>().get();\n";
           code << "      loadMatrix<" << (has_collo_grad ? "Q_1D" : ("P_out_" + std::to_string(i))) << ",Q_1D>(data, G->outputs[" << i << "], s_G_out_" << i
                << ");\n";
         }
@@ -789,7 +789,6 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
     switch (eval_mode) {
       case CEED_EVAL_NONE:
         code << "        CeedScalar* r_v_" << i << " = r_tt_" << i << ";\n";
-        code << "        r_v_" << i << "[0] = 1.0;\n";
         break;  // No action
       case CEED_EVAL_INTERP:
         code << "        CeedScalar r_v_" << i << "[num_comp_out_" << i << "*P_out_" << i << "];\n";
