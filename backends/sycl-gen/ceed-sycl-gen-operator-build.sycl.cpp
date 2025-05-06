@@ -238,7 +238,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   // Kernel function
   code << "\n// -----------------------------------------------------------------------------\n";
   code << "#include <vector>\n\n";
-  code << "template<int dim, int Q> class CeedSyclGenOperator_" << qfunction_name << ";\n\n";
+  code << "template<int dim, int Q, int P> class CeedSyclGenOperator_" << qfunction_name << ";\n\n";
   // code << "__attribute__((reqd_work_group_size(GROUP_SIZE_X, GROUP_SIZE_Y, GROUP_SIZE_Z), intel_reqd_sub_group_size(" << sub_group_size_op << ")))\n";
   code << "extern \"C\" void " << operator_name << "(";
   code << "sycl::queue &sycl_queue, ";
@@ -278,16 +278,20 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   code << "    sycl::local_accessor<CeedScalar> smem_S(" << scratch_size << ", cgh);\n";
   // Allocate shared memory for each field
   code << "\n    // -- Allocate shared memory for basis data for each input field --\n";
+  int P_identifier = 0;
   for (CeedInt i = 0; i < num_input_fields; i++) {
     code << "    // ---- Input field " << i << " ----\n";
     // Get eval_mode
     CeedCallBackend(CeedQFunctionFieldGetEvalMode(qf_input_fields[i], &eval_mode));
 
     // Get field constants
+    P_identifier = P_identifier*10;
     if (eval_mode != CEED_EVAL_WEIGHT) {
       CeedCallBackend(CeedOperatorFieldGetBasis(op_input_fields[i], &basis));
       if (basis != CEED_BASIS_NONE) {
         CeedCallBackend(CeedBasisGetNumNodes1D(basis, &P_1d));
+        // if(P_identifier == 0) P_identifier = P_1d;
+        P_identifier = P_identifier + P_1d;
       }
     }
 
@@ -360,7 +364,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
     CeedCallBackend(CeedBasisDestroy(&basis));
   }
 
-  code << "\n    cgh.parallel_for<CeedSyclGenOperator_" << qfunction_name << "<DIM, Q_1D>>(kernel_range, [=](sycl::nd_item<3> item)"
+  code << "\n    cgh.parallel_for<CeedSyclGenOperator_" << qfunction_name << "<DIM, Q_1D, " << P_identifier << ">>(kernel_range, [=](sycl::nd_item<3> item)"
       //  << " [[sycl::reqd_work_group_size(GROUP_SIZE_Z, GROUP_SIZE_Y, GROUP_SIZE_X), intel::reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << ")]]"
        << " {\n";
   code << "      CeedScalar *scratch = smem_S.get_multi_ptr<sycl::access::decorated::yes>().get();\n";
