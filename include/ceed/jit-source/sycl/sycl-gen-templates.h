@@ -9,6 +9,15 @@
 /// Internal header for SYCL backend macro and type definitions for JiT source
 #include <ceed/types.h>
 
+#define sqrt(x) sycl::sqrt(x)
+#define  exp(x) sycl::exp(x)
+#define  log(x) sycl::log(x)
+#define  cos(x) sycl::cos(x)
+#define  sin(x) sycl::sin(x)
+#define log1p(x) sycl::log1p(x)
+#define  pow(x,y) sycl::pow(x,y)
+#define fmin(x,y) sycl::fmin(x,y)
+
 // #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 // #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
 
@@ -102,7 +111,7 @@ inline void writeDofsStrided1d(SharedData_Sycl &data, const CeedInt num_elem, co
     const CeedInt node = data.item_id_x;
     const CeedInt ind  = node * STRIDES_NODE + data.item_id_z * STRIDES_ELEM;
     for (CeedInt comp = 0; comp < NUM_COMP; comp++) {
-      d_v[ind + comp * STRIDES_COMP] = r_v[comp]; //CHECK THIS
+      d_v[ind + comp * STRIDES_COMP] += r_v[comp]; //CHECK THIS
     }
   }
 }

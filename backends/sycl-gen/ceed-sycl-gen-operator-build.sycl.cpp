@@ -238,7 +238,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   // Kernel function
   code << "\n// -----------------------------------------------------------------------------\n";
   code << "#include <vector>\n\n";
-  code << "template<int dim, int Q, int P> class CeedSyclGenOperator_" << qfunction_name << ";\n\n";
+  code << "template<int dim, int Q, size_t hash> class CeedSyclGenOperator_" << qfunction_name << ";\n\n";
   // code << "__attribute__((reqd_work_group_size(GROUP_SIZE_X, GROUP_SIZE_Y, GROUP_SIZE_Z), intel_reqd_sub_group_size(" << sub_group_size_op << ")))\n";
   code << "extern \"C\" void " << operator_name << "(";
   code << "sycl::queue &sycl_queue, ";
@@ -265,7 +265,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
 
   // TODO: Convert these to defined constants to save on GRF
   code << "  const CeedInt DIM = " << dim << ";\n";
-  code << "  const CeedInt Q_1D = " << Q_1d << ";\n\n";
+  code << "  const CeedInt Q_1D = " << Q_1d << ";\n";
 
   code << "  std::vector<sycl::event> e;\n";
   code << "  if (!sycl_queue.is_in_order()) e = {sycl_queue.ext_oneapi_submit_barrier()};\n\n";
@@ -364,7 +364,7 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
     CeedCallBackend(CeedBasisDestroy(&basis));
   }
 
-  code << "\n    cgh.parallel_for<CeedSyclGenOperator_" << qfunction_name << "<DIM, Q_1D, " << P_identifier << ">>(kernel_range, [=](sycl::nd_item<3> item)"
+  code << "\n    cgh.parallel_for<CeedSyclGenOperator_" << qfunction_name << "<DIM, Q_1D, KERNEL_HASH>>(kernel_range, [=](sycl::nd_item<3> item)"
       //  << " [[sycl::reqd_work_group_size(GROUP_SIZE_Z, GROUP_SIZE_Y, GROUP_SIZE_X), intel::reqd_sub_group_size(" << SUB_GROUP_SIZE_QF << ")]]"
        << " {\n";
   code << "      CeedScalar *scratch = smem_S.get_multi_ptr<sycl::access::decorated::yes>().get();\n";
@@ -887,7 +887,12 @@ extern "C" int CeedOperatorBuildKernel_Sycl_gen(CeedOperator op) {
   jit_constants["GROUP_SIZE_Z"] = block_sizes[2];
 
   // Compile kernel into a kernel bundle
-  CeedCallBackend(CeedBuildModule_Sycl(ceed, code.str(), &impl->sycl_module, jit_constants));
+  std::hash<std::string> string_hash;
+  std::ostringstream kernel_header;
+  // kernel_header << "#include <cstdint>\n";
+  // kernel_header << "#define KERNEL_HASH UINT64_C(" << string_hash(code.str()) << ")\n\n";
+  // kernel_header << "constexpr size_t KERNEL_HASH = " << string_hash(code.str()) << ";\n\n";
+  CeedCallBackend(CeedBuildModule_Sycl(ceed, kernel_header.str()+code.str(), &impl->sycl_module, jit_constants));
 
   // Load kernel function
   CeedCallBackend(CeedGetKernel_Sycl(ceed, impl->sycl_module, operator_name, &impl->op));

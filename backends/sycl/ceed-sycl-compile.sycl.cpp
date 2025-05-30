@@ -39,6 +39,10 @@ static int CeedJitAddDefinitions_Sycl(Ceed ceed, const std::string &kernel_sourc
   for (const auto &[name, value] : constants) {
     oss << "#define " << name << " " << value << "\n";
   }
+  // oss << "#define CeedSyclSharedBasis_Interp CeedSyclSharedBasis_Interp_" << constants.find("BASIS_DIM")->second << "D_P" << constants.find("BASIS_P_1D")->second << "_Q" << constants.find("BASIS_Q_1D")->second << "\n";
+  // oss << "#define CeedSyclSharedBasis_InterpTranspose CeedSyclSharedBasis_InterpTranspose_" << constants.find("BASIS_DIM")->second << "D_P" << constants.find("BASIS_P_1D")->second << "_Q" << constants.find("BASIS_Q_1D")->second << "\n";
+  // oss << "#define CeedSyclSharedBasis_Grad CeedSyclSharedBasis_Grad_" << constants.find("BASIS_DIM")->second << "D_P" << constants.find("BASIS_P_1D")->second << "_Q" << constants.find("BASIS_Q_1D")->second << "\n";
+  // oss << "#define CeedSyclSharedBasis_GradTranspose CeedSyclSharedBasis_GradTranspose_" << constants.find("BASIS_DIM")->second << "D_P" << constants.find("BASIS_P_1D")->second << "_Q" << constants.find("BASIS_Q_1D")->second << "\n";
 
   // libCeed definitions for Sycl Backends
   CeedCallBackend(CeedGetJitAbsolutePath(ceed, sycl_jith_path, &jit_defs_path));
@@ -71,6 +75,12 @@ static inline int CeedJitGetFlags_Sycl(std::vector<std::string> &flags) {
   // TODO : Add AOT flags and other optimization flags
   // flags.push_back(std::string("-O3"));
   flags.push_back(std::string("-fsycl-targets=spir64_gen -Xsycl-target-backend \"-device pvc\" "));
+  // flags for debugging/profiling
+  flags.push_back(std::string("-fdebug-info-for-profiling -gline-tables-only"));
+  flags.push_back(std::string("-Wno-implicitly-unsigned-literal"));
+  // flags for memory sanitizer
+  flags.push_back(std::string(" -g "));
+  // flags.push_back(std::string(" -g -Xarch_device -fsanitize=address"));
   
   return CEED_ERROR_SUCCESS;
 }
@@ -88,7 +98,7 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
   if(std::getenv("CEED_CACHE_DIR")) {
     cache_root = std::string(std::getenv("CEED_CACHE_DIR")) + "/.ceed/cache";
   } else {
-    cache_root = std::string(std::getenv("PWD")) + "/.ceed/cache";
+    cache_root = std::string(std::getenv("PWD")) + "/cache";
   }
 
   // Generate kernel hash
@@ -127,6 +137,8 @@ static inline int CeedJitCompileSource_Sycl(Ceed ceed, const sycl::device &sycl_
   // Write source string to file
   std::ofstream source_file;
   source_file.open(source_file_path);
+  source_file << "#include <cstdint>\n";
+  source_file << "#define KERNEL_HASH UINT64_C(" << kernel_source_hash << ")\n\n";
   source_file << kernel_source;
   source_file.close();
 
